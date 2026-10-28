@@ -5,3 +5,7 @@ test-results/
 playwright-report/
 blob-report/
 .DS_Store
+
+# Downloaded asset packs: never commit third-party art here. Only the specific
+# sheets the game uses live in src/assets/ (see the README beside them).
+Characters PackV2/
