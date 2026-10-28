@@ -80,6 +80,26 @@ function resolveY(p: PlayerState, grid: TileGrid, dirY: number): boolean {
 }
 
 /**
+ * Which side of the body is pressed against solid terrain: -1 left, 1 right,
+ * 0 neither.
+ *
+ * Probes half a pixel outside the body. `resolveX` parks a blocked body 1e-4
+ * inside the wall face, so a probe at the body edge lands in the wall tile while
+ * a probe exactly on the edge would be ambiguous.
+ */
+export function touchingWall(p: PlayerState, grid: TileGrid): -1 | 0 | 1 {
+  const rowStart = Math.floor((p.pos.y - PLAYER_H) / TILE)
+  const rowEnd = Math.floor((p.pos.y - EPS) / TILE)
+  const solidInColumn = (col: number): boolean => {
+    for (let row = rowStart; row <= rowEnd; row++) if (isSolid(grid, col, row)) return true
+    return false
+  }
+  if (solidInColumn(Math.floor((p.pos.x - HALF_W - 0.5) / TILE))) return -1
+  if (solidInColumn(Math.floor((p.pos.x + HALF_W + 0.5) / TILE))) return 1
+  return 0
+}
+
+/**
  * Invariant checker used by the fuzzer and by unit tests: returns the first
  * solid tile the body is genuinely penetrating, or null.
  *

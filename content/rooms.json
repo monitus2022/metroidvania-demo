@@ -1,11 +1,18 @@
 {
   "startRoom": "atrium",
-  "goal": { "room": "spire", "col": 16, "row": 5 },
+  "goal": {
+    "room": "summit",
+    "col": 16,
+    "row": 9
+  },
   "rooms": [
     {
       "id": "atrium",
-      "comment": "Start. Teaches walking. 20x12, flat floor. The east door returns from the gallery.",
-      "entry": { "col": 2, "row": 9 },
+      "comment": "Start. Flat floor and nothing to fall off. East door is the only exit.",
+      "entry": {
+        "col": 2,
+        "row": 9
+      },
       "rows": [
         "....................",
         "....................",
@@ -31,12 +38,22 @@
         }
       ],
       "items": [],
-      "props": [{ "id": "atrium-chest", "kind": "chest", "col": 6, "row": 9 }]
+      "props": [
+        {
+          "id": "atrium-chest",
+          "kind": "chest",
+          "col": 6,
+          "row": 9
+        }
+      ]
     },
     {
       "id": "gallery",
-      "comment": "doubleJump on the floor; the east door sits on a ledge 4 tiles up. West door walks back to the atrium.",
-      "entry": { "col": 0, "row": 9 },
+      "comment": "doubleJump on the floor. The east door sits on a ledge four tiles up, so the ability is what opens the way on.",
+      "entry": {
+        "col": 0,
+        "row": 9
+      },
       "rows": [
         "....................",
         "....................",
@@ -61,31 +78,42 @@
           "toRow": 9
         },
         {
-          "id": "gallery-to-spire",
+          "id": "gallery-to-shaft",
           "col": 19,
           "row": 5,
-          "to": "spire",
+          "to": "shaft",
           "toCol": 0,
-          "toRow": 5,
-          "gate": "gate-to-spire"
+          "toRow": 2
         }
       ],
-      "items": [{ "id": "gallery-double-jump", "ability": "doubleJump", "col": 4, "row": 9 }],
+      "items": [
+        {
+          "id": "gallery-double-jump",
+          "ability": "doubleJump",
+          "col": 4,
+          "row": 9
+        }
+      ],
       "props": []
     },
     {
-      "id": "spire",
-      "comment": "Goal room. A 5-tile pit separates the entry ledge from the goal ledge. West door walks back to the gallery.",
-      "entry": { "col": 0, "row": 5 },
+      "id": "shaft",
+      "comment": "The way down. Enter at the top and drop; the shelves only break the fall.",
+      "entry": {
+        "col": 0,
+        "row": 2
+      },
       "rows": [
+        "####################",
         "....................",
         "....................",
+        "######..............",
+        "######..............",
+        "..............######",
+        "..............######",
         "....................",
-        "....................",
-        "....................",
-        "....................",
-        "#####.....##########",
-        "#####.....##########",
+        ".....######.........",
+        ".....######.........",
         "....................",
         "....................",
         "####################",
@@ -93,16 +121,246 @@
       ],
       "doors": [
         {
-          "id": "spire-to-gallery",
+          "id": "shaft-to-gallery",
           "col": 0,
-          "row": 5,
+          "row": 2,
           "to": "gallery",
           "toCol": 19,
           "toRow": 5
+        },
+        {
+          "id": "shaft-to-overlook",
+          "col": 19,
+          "row": 11,
+          "to": "overlook",
+          "toCol": 19,
+          "toRow": 9
         }
       ],
       "items": [],
-      "props": [{ "id": "spire-goal-flag", "kind": "flag", "col": 16, "row": 5 }]
+      "props": []
+    },
+    {
+      "id": "overlook",
+      "comment": "Flat and quiet. wallClimb waits on the floor; the way on is west.",
+      "entry": {
+        "col": 19,
+        "row": 9
+      },
+      "rows": [
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "####################",
+        "####################"
+      ],
+      "doors": [
+        {
+          "id": "overlook-to-shaft",
+          "col": 19,
+          "row": 9,
+          "to": "shaft",
+          "toCol": 19,
+          "toRow": 11
+        },
+        {
+          "id": "overlook-to-cistern",
+          "col": 0,
+          "row": 9,
+          "to": "cistern",
+          "toCol": 0,
+          "toRow": 9
+        }
+      ],
+      "items": [
+        {
+          "id": "overlook-wall-climb",
+          "ability": "wallClimb",
+          "col": 5,
+          "row": 9
+        }
+      ],
+      "props": []
+    },
+    {
+      "id": "cistern",
+      "comment": "The gate. The ledge is seven tiles up \u2014 beyond a double jump \u2014 and can only be reached by climbing the wall at column 6.",
+      "entry": {
+        "col": 0,
+        "row": 9
+      },
+      "rows": [
+        "....................",
+        "....................",
+        "......#.............",
+        "#####.#.............",
+        "#####.#.............",
+        "......#.............",
+        "......#.............",
+        "......#.............",
+        "......#.............",
+        "......#.............",
+        "####################",
+        "####################"
+      ],
+      "doors": [
+        {
+          "id": "cistern-to-overlook",
+          "col": 0,
+          "row": 9,
+          "to": "overlook",
+          "toCol": 0,
+          "toRow": 9
+        },
+        {
+          "id": "cistern-to-foundry",
+          "col": 4,
+          "row": 2,
+          "to": "foundry",
+          "toCol": 0,
+          "toRow": 9
+        }
+      ],
+      "items": [],
+      "props": []
+    },
+    {
+      "id": "foundry",
+      "comment": "Breathing room with a three-tile gap to clear.",
+      "entry": {
+        "col": 0,
+        "row": 9
+      },
+      "rows": [
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "########...#########",
+        "########...#########"
+      ],
+      "doors": [
+        {
+          "id": "foundry-to-cistern",
+          "col": 0,
+          "row": 9,
+          "to": "cistern",
+          "toCol": 0,
+          "toRow": 9
+        },
+        {
+          "id": "foundry-to-ascent",
+          "col": 19,
+          "row": 9,
+          "to": "ascent",
+          "toCol": 0,
+          "toRow": 15
+        }
+      ],
+      "items": [],
+      "props": []
+    },
+    {
+      "id": "ascent",
+      "comment": "The long climb. Thirteen tiles of chimney; the wall at column 16 is the way up and nothing else reaches.",
+      "entry": {
+        "col": 0,
+        "row": 15
+      },
+      "rows": [
+        "####################",
+        "....................",
+        "................#...",
+        "###############.#...",
+        "###############.#...",
+        "................#...",
+        "................#...",
+        "................#...",
+        "................#...",
+        "................#...",
+        "................#...",
+        "................#...",
+        "................#...",
+        "................#...",
+        "................#...",
+        "................#...",
+        "####################",
+        "####################"
+      ],
+      "doors": [
+        {
+          "id": "ascent-to-foundry",
+          "col": 0,
+          "row": 15,
+          "to": "foundry",
+          "toCol": 19,
+          "toRow": 9
+        },
+        {
+          "id": "ascent-to-summit",
+          "col": 0,
+          "row": 2,
+          "to": "summit",
+          "toCol": 0,
+          "toRow": 9
+        }
+      ],
+      "items": [],
+      "props": []
+    },
+    {
+      "id": "summit",
+      "comment": "Goal. The flag marks the end.",
+      "entry": {
+        "col": 0,
+        "row": 9
+      },
+      "rows": [
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "####################",
+        "####################"
+      ],
+      "doors": [
+        {
+          "id": "summit-to-ascent",
+          "col": 0,
+          "row": 9,
+          "to": "ascent",
+          "toCol": 0,
+          "toRow": 1
+        }
+      ],
+      "items": [],
+      "props": [
+        {
+          "id": "summit-goal-flag",
+          "kind": "flag",
+          "col": 16,
+          "row": 9
+        }
+      ]
     }
   ]
 }

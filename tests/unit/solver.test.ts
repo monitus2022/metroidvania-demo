@@ -62,17 +62,33 @@ describe('content: the shipped map', () => {
     expect(r.beatable).toBe(true)
   })
 
-  it('requires exactly the double jump to finish', () => {
+  it('requires exactly the double jump and the wall climb to finish', () => {
     const r = run()
-    expect(r.abilities).toEqual(['doubleJump'])
-    expect(r.reachableRooms).toEqual(['atrium', 'gallery', 'spire'])
-    // Every door is two-way, so a full solve opens all four.
-    expect(r.openedDoors).toEqual([
-      'atrium-to-gallery',
-      'gallery-to-atrium',
-      'gallery-to-spire',
-      'spire-to-gallery',
+    expect(r.abilities).toEqual(['doubleJump', 'wallClimb'])
+    expect(r.reachableRooms).toEqual([
+      'ascent',
+      'atrium',
+      'cistern',
+      'foundry',
+      'gallery',
+      'overlook',
+      'shaft',
+      'summit',
     ])
+  })
+
+  it('every door in the level is actually usable, in both directions', () => {
+    // A door can be reachable from one side and not the other — arriving at a
+    // room's old entry point leaves the return door stranded, which the softlock
+    // check cannot see because the room has another exit. Caught exactly that
+    // when the shaft was rebuilt as a descent and its entry moved from (0,11)
+    // to (0,1) while the gallery's door still pointed at the old cell.
+    const r = run()
+    const all = Object.values(loadGameMap(roomsFile as RoomsFile).rooms).flatMap((room) =>
+      room.doors.map((d) => d.id),
+    )
+    expect(all.length).toBeGreaterThan(0)
+    expect([...r.openedDoors].sort()).toEqual([...all].sort())
   })
 
   it('every room is rectangular and its entry cell is standable', () => {
@@ -93,12 +109,15 @@ describe('content: the shipped map', () => {
     const map = loadGameMap(roomsFile as RoomsFile)
     expect(map.rooms.atrium!.grid.spawn).toEqual({ x: 2 * 16 + 8, y: (9 + 1) * 16 })
     expect(map.rooms.gallery!.grid.spawn).toEqual({ x: 0 * 16 + 8, y: (9 + 1) * 16 })
-    expect(map.rooms.spire!.grid.spawn).toEqual({ x: 0 * 16 + 8, y: (5 + 1) * 16 })
+    expect(map.rooms.ascent!.grid.spawn).toEqual({ x: 0 * 16 + 8, y: (15 + 1) * 16 })
   })
 })
 
 describe('solver: gating actually gates', () => {
-  it('removing the item makes the goal unreachable (unkeyed gate)', () => {
+  it('without the double jump the run stops in the gallery', () => {
+    // Gating is geometric now, not a locked door: the gallery's ledge is four
+    // tiles up, so with the item removed the solver simply never reaches the
+    // shaft. There is no blocked door to report, only an unreachable room.
     const rooms = mutRooms()
     roomIn(rooms, 'gallery').items = []
     const r = run(rooms)
@@ -107,7 +126,20 @@ describe('solver: gating actually gates', () => {
     expect(r.beatable).toBe(false)
     expect(r.abilities).toEqual([])
     expect(r.reachableRooms).toEqual(['atrium', 'gallery'])
-    expect(r.blockedDoors).toEqual([{ door: 'gallery-to-spire', requires: 'doubleJump' }])
+    expect(r.blockedDoors).toEqual([])
+  })
+
+  it('without the wall climb the run stops in the cistern', () => {
+    // The cistern ledge is seven tiles up — past any jump — and the ascent
+    // chimney is thirteen. Both need the ability the overlook grants.
+    const rooms = mutRooms()
+    roomIn(rooms, 'overlook').items = []
+    const r = run(rooms)
+
+    expect(r.beatable).toBe(false)
+    expect(r.abilities).toEqual(['doubleJump'])
+    expect(r.reachableRooms).not.toContain('foundry')
+    expect(r.reachableRooms).not.toContain('ascent')
   })
 
   it('a goal behind a full-height wall is unreachable with any ability', () => {
@@ -209,10 +241,10 @@ describe('solver: content validation', () => {
 
   it('rejects a door referencing a gate that is not defined', () => {
     const rooms = mutRooms()
-    const gated = roomIn(rooms, 'gallery').doors!.find((d) => d.id === 'gallery-to-spire')!
+    const gated = roomIn(rooms, 'gallery').doors!.find((d) => d.id === 'gallery-to-shaft')!
     gated.gate = 'gate-not-defined'
     expect(run(rooms).errors).toContain(
-      'door "gallery-to-spire" references gate "gate-not-defined" missing from gates.json',
+      'door "gallery-to-shaft" references gate "gate-not-defined" missing from gates.json',
     )
   })
 
@@ -234,8 +266,8 @@ describe('solver: content validation', () => {
 
   it('rejects a goal inside solid terrain', () => {
     const rooms = mutRooms()
-    rooms.goal = { room: 'spire', col: 0, row: 6 }
-    expect(run(rooms).errors).toContain('goal cell (0, 6) is inside solid terrain')
+    rooms.goal = { room: 'summit', col: 0, row: 10 }
+    expect(run(rooms).errors).toContain('goal cell (0, 10) is inside solid terrain')
   })
 
   it('rejects a door placed inside solid terrain', () => {
