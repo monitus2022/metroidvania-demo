@@ -63,3 +63,26 @@ export function isSolid(grid: TileGrid, col: number, row: number): boolean {
 
 export const gridWidthPx = (grid: TileGrid): number => grid.w * TILE
 export const gridHeightPx = (grid: TileGrid): number => grid.h * TILE
+
+/**
+ * The y (in px) of the top edge of the room's floor: the highest row such that
+ * every row from there to the bottom is solid.
+ *
+ * Used to place background layers so their opaque lower band hides behind the
+ * terrain rather than striping across the play area.
+ */
+export function floorTopY(grid: TileGrid): number {
+  let row = grid.h - 1
+  while (row >= 0) {
+    let allSolid = true
+    for (let col = 0; col < grid.w; col++) {
+      if (!isSolid(grid, col, row)) {
+        allSolid = false
+        break
+      }
+    }
+    if (!allSolid) break
+    row--
+  }
+  return (row + 1) * TILE
+}

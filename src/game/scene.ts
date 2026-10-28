@@ -4,7 +4,8 @@ import { BTN, type InputMask } from '../sim/input'
 import { GAME_MAP } from '../sim/levels'
 import { createInitialState, gridOf, hasAbility, isDoorOpen, respawn, step } from '../sim/step'
 import type { WorldState } from '../sim/state'
-import { isSolid } from '../sim/tiles'
+import { floorTopY, isSolid } from '../sim/tiles'
+import { PARALLAX } from './parallax'
 import { CURRENT } from './sprites'
 
 /** Diagnostic view of the sprite, so anchoring can be asserted exactly. */
@@ -55,6 +56,7 @@ export class PlayScene extends Phaser.Scene {
   private prevAirJumps = 0
 
   private hud!: HTMLDivElement
+  private parallax: { ts: Phaser.GameObjects.TileSprite; layer: (typeof PARALLAX)[number]; texH: number }[] = []
   private terrain!: Phaser.GameObjects.Graphics
   private props!: Phaser.GameObjects.Graphics
   private box!: Phaser.GameObjects.Graphics
@@ -79,6 +81,7 @@ export class PlayScene extends Phaser.Scene {
         frameHeight: sheet.frameHeight,
       })
     }
+    for (const layer of PARALLAX) this.load.image(layer.key, layer.url)
   }
 
   create(): void {
@@ -94,6 +97,7 @@ export class PlayScene extends Phaser.Scene {
       })
     }
 
+    this.buildParallax()
     this.terrain = this.add.graphics()
     this.props = this.add.graphics()
     this.box = this.add.graphics()
@@ -145,6 +149,25 @@ export class PlayScene extends Phaser.Scene {
         posY: this.state.player.pos.y,
       }),
     }
+  }
+
+  /**
+   * Layered backgrounds, built once and resized per room.
+   *
+   * A tileSprite sized to the room, with `scrollFactor` set to the layer's
+   * factor, means Phaser does the parallax offset and the texture loops to fill
+   * however large the room is — no seams at the edges, no manual tiling.
+   */
+  private buildParallax(): void {
+    this.parallax = PARALLAX.map((layer, i) => {
+      const ts = this.add.tileSprite(0, 0, 1, 1, layer.key)
+      ts.setOrigin(0, 0)
+      ts.setScrollFactor(layer.factor, layer.factor)
+      // Behind everything: terrain sits at depth 0.
+      ts.setDepth(-100 + i)
+      const source = this.textures.get(layer.key).getSourceImage()
+      return { ts, layer, texH: source.height }
+    })
   }
 
   /**
@@ -227,7 +250,21 @@ export class PlayScene extends Phaser.Scene {
       this.props.fillRect(door.col * TILE + 5, door.row * TILE + 2, TILE - 10, TILE - 2)
     }
 
-    this.cameras.main.setBounds(0, 0, grid.w * TILE, grid.h * TILE)
+    const roomW = grid.w * TILE
+    const roomH = grid.h * TILE
+    this.cameras.main.setBounds(0, 0, roomW, roomH)
+
+    // Align each layer's opaque horizon with the room's floor line, so the flat
+    // band at the bottom of every layer ends up behind the terrain instead of
+    // striping across the middle of the play area.
+    const floorY = floorTopY(grid)
+    for (const { ts, layer, texH } of this.parallax) {
+      ts.setSize(roomW, roomH)
+      ts.setPosition(0, 0)
+      const offset = layer.opaqueFrom - floorY
+      ts.tilePositionY = Math.max(0, Math.min(Math.max(0, texH - roomH), offset))
+    }
+
     this.drawnKey = this.viewKey()
   }
 
