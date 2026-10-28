@@ -1,3 +1,4 @@
+import { KNOWN_ENEMY_ARCHETYPES } from './constants'
 import { gridFromRows, type TileGrid } from './tiles'
 
 /**
@@ -65,11 +66,14 @@ export interface EnemyDef {
 }
 
 /**
- * Enemy kinds the game knows how to simulate. Separate from the renderer's
- * sprite table, but the two must agree — a kind the sim runs and the renderer
- * cannot draw is an invisible enemy.
+ * Enemy kinds the game knows how to simulate.
+ *
+ * Derived from the sim's archetype table rather than repeated here, so adding an
+ * archetype cannot leave the validator behind: a kind the loader accepts but the
+ * sim has no numbers for used to be possible, and its symptom was an enemy with
+ * `undefined` health.
  */
-export const KNOWN_ENEMY_KINDS = ['enraged'] as const
+export const KNOWN_ENEMY_KINDS: readonly string[] = KNOWN_ENEMY_ARCHETYPES
 
 export interface RoomDef {
   readonly id: string

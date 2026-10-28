@@ -105,6 +105,19 @@ export function enemyRoom(options: { patrol?: number } = {}) {
   })
 }
 
+/**
+ * A flat room with the boss standing near the middle, `patrol: 0` so it holds
+ * still for damage tests. Open floor on purpose: the boss is 48px tall and 24px
+ * wide, so anything overhead would wedge it.
+ */
+export function bossRoom() {
+  const air = '....................'
+  return singleRoomMap([...Array(9).fill(air), '..P.................', '#'.repeat(20), '#'.repeat(20)], {
+    id: 'boss-room',
+    enemies: [{ id: 'b1', kind: 'nightborne', col: 12, row: 9, patrol: 0 }],
+  })
+}
+
 /** Put the fixture's single enemy `distance` px in front of the player. */
 export function enemyInFront(s: WorldState, distance = 20): WorldState {
   return {

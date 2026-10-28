@@ -43,6 +43,12 @@ export interface PlayerState extends Body {
 export interface EnemyState extends Body {
   readonly id: string
   readonly roomId: string
+  /**
+   * Which archetype this is — the box, the health, the speed and whether it
+   * respawns all come from here rather than from module constants, so a husk and
+   * the boss can coexist without the sim branching on anything else.
+   */
+  readonly kind: string
   /** Where it started, and where it returns to on respawn. */
   readonly spawn: Vec2
   /** Tiles either side of spawn.x this enemy is allowed to walk. */

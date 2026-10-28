@@ -1,9 +1,12 @@
 import {
   AIR_ACCEL_FACTOR,
   AIR_FRICTION,
+  ARCHETYPES,
+  archetypeFor,
   ATTACK_COOLDOWN_TICKS,
   ATTACK_REACH,
   ATTACK_TICKS,
+  BOSS_AGGRO,
   COYOTE_TIME,
   DOOR_ARRIVAL_INSET,
   DOUBLE_JUMP_VELOCITY,
@@ -12,14 +15,12 @@ import {
   ENEMY_ATTACK_HEIGHT,
   ENEMY_ATTACK_RANGE,
   ENEMY_ATTACK_REACH,
-  ENEMY_H,
   ENEMY_HIT_COOLDOWN,
   ENEMY_HP,
   ENEMY_LUNGE_SPEED,
   ENEMY_RECOVER_TICKS,
   ENEMY_RESPAWN_TICKS,
   ENEMY_SPEED,
-  ENEMY_W,
   ENEMY_WINDUP_TICKS,
   FIXED_DT,
   GRAVITY,
@@ -100,18 +101,21 @@ export function freshEnemies(map: GameMap): EnemyState[] {
   const out: EnemyState[] = []
   for (const roomId of map.order) {
     for (const enemy of map.rooms[roomId]!.enemies) {
+      // The archetype decides the box, the health and whether it comes back.
+      const arch = archetypeFor(enemy.kind) ?? ARCHETYPES.enraged!
       const spawn = { x: enemy.col * TILE + TILE / 2, y: (enemy.row + 1) * TILE }
       out.push({
         id: enemy.id,
         roomId,
+        kind: enemy.kind,
         spawn,
         patrol: enemy.patrol,
         pos: { ...spawn },
         vel: { x: 0, y: 0 },
-        w: ENEMY_W,
-        h: ENEMY_H,
+        w: arch.w,
+        h: arch.h,
         dir: -1,
-        hp: ENEMY_HP,
+        hp: arch.hp,
         alive: true,
         respawnTimer: 0,
         hitCooldown: 0,
@@ -216,10 +220,19 @@ function stepEnemy(e: EnemyState, grid: TileGrid, dt: number, player: PlayerStat
   if (e.attackCooldown > 0) e.attackCooldown -= 1
 
   if (!e.alive) {
+    // A boss stays dead, and the timer cannot express that.
+    //
+    // "Not respawning" was written as `respawnTimer = 0`, but 0 is also what a
+    // due-now respawn looks like, so the boss was alive again on the very next
+    // tick — and healed to ENEMY_HP rather than its own health, which made it
+    // look invincible after three hits instead of after four. The archetype
+    // decides permanence; the timer only measures the wait.
+    if (archetypeFor(e.kind)?.respawns === false) return
+
     e.respawnTimer -= 1
     if (e.respawnTimer <= 0) {
       e.alive = true
-      e.hp = ENEMY_HP
+      e.hp = archetypeFor(e.kind)?.hp ?? ENEMY_HP
       e.pos = { ...e.spawn }
       e.vel = { x: 0, y: 0 }
       e.respawnTimer = 0
@@ -271,10 +284,31 @@ function stepEnemy(e: EnemyState, grid: TileGrid, dt: number, player: PlayerStat
   }
 
   e.vel.y = Math.min(MAX_FALL, e.vel.y + GRAVITY * dt)
-  e.vel.x = e.dir * ENEMY_SPEED
+
+  const arch = archetypeFor(e.kind)
+  // Chase: a boss that only patrols is a boss you walk around the edge of.
+  // Outside its notice range it falls back to patrolling, so it does not beeline
+  // across the whole room before the player has even arrived.
+  const chasing =
+    arch?.chase === true && Math.abs(toPlayerX) <= BOSS_AGGRO && Math.abs(toPlayerX) > 1
+  if (chasing) e.dir = toPlayerX >= 0 ? 1 : -1
+
+  e.vel.x = e.dir * (arch?.speed ?? ENEMY_SPEED)
+
+  // While chasing it stops at a ledge rather than turning. Turning would flip
+  // its facing on every tick, because the chase re-aims on the next one — and
+  // stopping is also what keeps a boss inside its arena.
+  if (chasing) {
+    const aheadCol = Math.floor((e.pos.x + e.dir * (e.w / 2 + 2)) / TILE)
+    const belowRow = Math.floor((e.pos.y + 1) / TILE)
+    if (!isSolid(grid, aheadCol, belowRow)) e.vel.x = 0
+  }
 
   const blocked = moveX(e, grid, e.vel.x * dt)
   moveY(e, grid, e.vel.y * dt)
+
+  if (chasing) return
+
   const turn = (): void => {
     e.dir = e.dir === 1 ? -1 : 1
   }
@@ -398,10 +432,13 @@ export function step(state: WorldState, input: InputMask, dt: number = FIXED_DT)
     } else if (!enemy.alive) {
       // Out of the room: frozen in place, but the respawn clock keeps running, so
       // a room you cleared is repopulated whether or not you are standing in it.
+      // Same rule as in-room: an archetype that does not respawn never comes
+      // back, wherever the player happens to be standing.
+      if (archetypeFor(enemy.kind)?.respawns === false) continue
       enemy.respawnTimer -= 1
       if (enemy.respawnTimer <= 0) {
         enemy.alive = true
-        enemy.hp = ENEMY_HP
+        enemy.hp = archetypeFor(enemy.kind)?.hp ?? ENEMY_HP
         enemy.pos = { ...enemy.spawn }
         enemy.respawnTimer = 0
       }
@@ -424,7 +461,11 @@ export function step(state: WorldState, input: InputMask, dt: number = FIXED_DT)
         enemy.alive = false
         enemy.hp = 0
         enemy.vel = { x: 0, y: 0 }
-        enemy.respawnTimer = ENEMY_RESPAWN_TICKS
+        // `respawnTimer` is the only thing that brings an enemy back, so leaving
+        // it at 0 is what makes a defeated boss stay defeated. A husk refills
+        // the room; the boss is a one-time event.
+        enemy.respawnTimer =
+          archetypeFor(enemy.kind)?.respawns === false ? 0 : ENEMY_RESPAWN_TICKS
       }
     }
   }

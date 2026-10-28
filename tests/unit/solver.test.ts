@@ -67,6 +67,7 @@ describe('content: the shipped map', () => {
     expect(r.unverified).toEqual([
       'room "shaft" places 2 enemies: movement is verified, combat is not',
       'room "foundry" places 1 enemy: movement is verified, combat is not',
+      'room "summit" holds a boss (summit-nightborne): movement is verified, winning the fight is not',
     ])
   })
 
@@ -351,9 +352,12 @@ describe('solver: content validation', () => {
   it('rejects an enemy of a kind the game cannot simulate', () => {
     const rooms = mutRooms()
     roomIn(rooms, 'foundry').enemies![0]!.kind = 'dragon'
-    expect(run(rooms).errors).toContain(
-      'enemy "foundry-husk" has unknown kind "dragon" (known: enraged)',
-    )
+    // Not pinned to the full known-list: adding an archetype should not churn
+    // this test, but the rejection and the set it reports must both be real.
+    const err = run(rooms).errors.find((e) => e.includes('foundry-husk'))
+    expect(err).toContain('has unknown kind "dragon"')
+    expect(err).toContain('enraged')
+    expect(err).toContain('nightborne')
   })
 
   it('rejects an enemy with no ground under it', () => {
@@ -396,9 +400,14 @@ describe('solver: content validation', () => {
 
   it('reports every room with an enemy as outside the movement model', () => {
     const r = run()
-    expect(r.unverified.length).toBe(2)
+    expect(r.unverified.length).toBe(3)
     expect(r.unverified.join(' ')).toContain('"shaft"')
     expect(r.unverified.join(' ')).toContain('"foundry"')
+    // The boss gets its own wording: it does not respawn and the goal sits behind
+    // it, so "the player can reach that tile" is a weaker claim there than it is
+    // for a husk in a corridor.
+    expect(r.unverified.join(' ')).toContain('holds a boss')
+    expect(r.unverified.join(' ')).toContain('winning the fight is not')
     // Not a warning: warnings fail the build, and this is permanent.
     expect(r.warnings).toEqual([])
   })
