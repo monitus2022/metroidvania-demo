@@ -1,20 +1,30 @@
 import Phaser from 'phaser'
 import {
   DOOR_ARRIVAL_INSET,
+  ENEMY_WINDUP_TICKS,
   FIXED_DT,
   PLAYER_H,
+  PLAYER_MAX_HP,
   PLAYER_W,
   TILE,
   TRANSITION_LOCK_TICKS,
 } from '../sim/constants'
 import { BTN, type InputMask } from '../sim/input'
 import { GAME_MAP } from '../sim/levels'
-import { createInitialState, gridOf, hasAbility, isDoorOpen, respawn, step } from '../sim/step'
+import {
+  createInitialState,
+  enemyAttackPhase,
+  gridOf,
+  hasAbility,
+  isDoorOpen,
+  respawn,
+  step,
+} from '../sim/step'
 import type { WorldState } from '../sim/state'
 import { floorTopY, isSolid } from '../sim/tiles'
 import { PARALLAX } from './parallax'
 import { PROP_STYLES } from './props'
-import { CURRENT } from './sprites'
+import { CURRENT, ENEMY, SPRITE_SETS } from './sprites'
 import { TERRAIN } from './terrain'
 
 /** Diagnostic view of the sprite, so anchoring can be asserted exactly. */
@@ -80,10 +90,19 @@ export class PlayScene extends Phaser.Scene {
   private props!: Phaser.GameObjects.Graphics
   private box!: Phaser.GameObjects.Graphics
   private player!: Phaser.GameObjects.Sprite
+  private enemySprites = new Map<string, Phaser.GameObjects.Sprite>()
+  /** Wind-up indicator, drawn above enemies so it reads even when sprites overlap. */
+  private telegraph!: Phaser.GameObjects.Graphics
+  private prevAttackTimer = 0
+  private prevHurtTimer = 0
+  /** Rising-edge detectors for per-enemy animation restarts. */
+  private prevEnemyAttack = new Map<string, number>()
+  private prevEnemyHit = new Map<string, number>()
   private keys!: {
     left: Phaser.Input.Keyboard.Key
     right: Phaser.Input.Keyboard.Key
     jump: Phaser.Input.Keyboard.Key
+    attack: Phaser.Input.Keyboard.Key
     a: Phaser.Input.Keyboard.Key
     d: Phaser.Input.Keyboard.Key
     r: Phaser.Input.Keyboard.Key
@@ -94,11 +113,13 @@ export class PlayScene extends Phaser.Scene {
   }
 
   preload(): void {
-    for (const [name, sheet] of Object.entries(CURRENT.sheets)) {
-      this.load.spritesheet(`${CURRENT.id}-${name}`, sheet.url, {
-        frameWidth: sheet.frameWidth,
-        frameHeight: sheet.frameHeight,
-      })
+    for (const set of SPRITE_SETS) {
+      for (const [name, sheet] of Object.entries(set.sheets)) {
+        this.load.spritesheet(`${set.id}-${name}`, sheet.url, {
+          frameWidth: sheet.frameWidth,
+          frameHeight: sheet.frameHeight,
+        })
+      }
     }
     for (const layer of PARALLAX) this.load.image(layer.key, layer.url)
     this.load.image(TERRAIN.key, TERRAIN.url)
@@ -111,16 +132,20 @@ export class PlayScene extends Phaser.Scene {
   }
 
   create(): void {
-    for (const [name, anim] of Object.entries(CURRENT.animations)) {
-      this.anims.create({
-        key: `${CURRENT.id}-${name}`,
-        frames: this.anims.generateFrameNumbers(`${CURRENT.id}-${anim.sheet}`, {
-          start: anim.start,
-          end: anim.end,
-        }),
-        frameRate: anim.frameRate,
-        repeat: anim.repeat,
-      })
+    for (const set of SPRITE_SETS) {
+      for (const [name, anim] of Object.entries(set.animations)) {
+        const key = `${set.id}-${name}`
+        if (this.anims.exists(key)) continue
+        this.anims.create({
+          key,
+          frames: this.anims.generateFrameNumbers(`${set.id}-${anim.sheet}`, {
+            start: anim.start,
+            end: anim.end,
+          }),
+          frameRate: anim.frameRate,
+          repeat: anim.repeat,
+        })
+      }
     }
 
     for (const [kind, style] of Object.entries(PROP_STYLES)) {
@@ -144,6 +169,7 @@ export class PlayScene extends Phaser.Scene {
     this.buildParallax()
     this.terrain = this.add.graphics()
     this.props = this.add.graphics()
+    this.telegraph = this.add.graphics()
     this.box = this.add.graphics()
 
     this.player = this.add.sprite(0, 0, `${CURRENT.id}-idle`)
@@ -156,6 +182,7 @@ export class PlayScene extends Phaser.Scene {
     // a prop drawn after the player cover her.
     this.terrain.setDepth(0)
     this.props.setDepth(1)
+    this.telegraph.setDepth(2.5)
     this.box.setDepth(2)
     this.player.setDepth(3)
 
@@ -168,6 +195,7 @@ export class PlayScene extends Phaser.Scene {
       left: keyboard.addKey(K.LEFT),
       right: keyboard.addKey(K.RIGHT),
       jump: keyboard.addKey(K.SPACE),
+      attack: keyboard.addKey(K.X),
       a: keyboard.addKey(K.A),
       d: keyboard.addKey(K.D),
       r: keyboard.addKey(K.R),
@@ -292,6 +320,7 @@ export class PlayScene extends Phaser.Scene {
     if (this.keys.left.isDown || this.keys.a.isDown) mask |= BTN.LEFT
     if (this.keys.right.isDown || this.keys.d.isDown) mask |= BTN.RIGHT
     if (this.keys.jump.isDown) mask |= BTN.JUMP
+    if (this.keys.attack.isDown) mask |= BTN.ATTACK
     return mask
   }
 
@@ -415,13 +444,44 @@ export class PlayScene extends Phaser.Scene {
     if (this.drawnKey !== this.viewKey()) this.drawRoom()
 
     const p = this.state.player
-    const wanted = !p.onGround ? 'air' : Math.abs(p.vel.x) > RUN_ANIM_THRESHOLD ? 'run' : 'idle'
-    const animKey = `${CURRENT.id}-${wanted}`
     const current = this.player.anims.currentAnim?.key
+    const attackKey = `${CURRENT.id}-attack`
+    const hitKey = `${CURRENT.id}-hit`
+
+    // A swing is a fresh press: restart the strip only when the timer goes up,
+    // so holding the button does not re-trigger the swing animation.
+    const attackStarted = this.state.attackTimer > this.prevAttackTimer
+    this.prevAttackTimer = this.state.attackTimer
+    if (attackStarted) this.player.anims.play(attackKey, true)
+
+    // Taking a hit is likewise a rising edge.
+    const hurtStarted = this.state.hurtTimer > this.prevHurtTimer
+    this.prevHurtTimer = this.state.hurtTimer
+    if (hurtStarted) this.player.anims.play(hitKey, true)
+
+    // The hitbox closes after 12 ticks but the strip is ~20; cutting the arc off
+    // mid-swing reads as a broken attack, so let it finish before locomotion
+    // wins the sprite back. Same for the hurt pose.
+    const swinging =
+      this.state.attackTimer > 0 || (current === attackKey && this.player.anims.isPlaying)
+    const reeling = !swinging && (this.state.hurtTimer > 0 || (current === hitKey && this.player.anims.isPlaying))
+
+    const wanted = swinging
+      ? 'attack'
+      : reeling
+        ? 'hit'
+        : !p.onGround
+          ? 'air'
+          : Math.abs(p.vel.x) > RUN_ANIM_THRESHOLD
+            ? 'run'
+            : 'idle'
+    const animKey = `${CURRENT.id}-${wanted}`
     const doubleJumped = p.airJumpsUsed > this.prevAirJumps
     this.prevAirJumps = p.airJumpsUsed
 
-    if (wanted === 'air') {
+    if (wanted === 'attack' || wanted === 'hit') {
+      // Started above; the swing or the recoil owns the sprite until it finishes.
+    } else if (wanted === 'air') {
       // Restart the air strip on the mid-air jump; otherwise let it play out and
       // hold its last frame, which is the falling pose.
       if (doubleJumped || current !== animKey || !this.player.anims.isPlaying) {
@@ -434,6 +494,23 @@ export class PlayScene extends Phaser.Scene {
     const nudge = p.facing === 1 ? CURRENT.xNudge : -CURRENT.xNudge
     this.player.setPosition(p.pos.x + nudge, p.pos.y)
     this.player.setFlipX(p.facing === -1)
+
+    // Damage feedback, in three parts:
+    //   hurt   a red tint for the length of the hurt pose
+    //   blink  the standard flicker for as long as invulnerability lasts, so
+    //          "you cannot be hit right now" is visible rather than implied
+    //   tick   driven off the sim's tick, not wall-clock, so it stays in step
+    //          with the fixed-step sim and with a replay
+    if (this.state.hurtTimer > 0) {
+      this.player.setTint(0xff6b6b)
+    } else {
+      this.player.clearTint()
+    }
+    if (this.state.invulnTimer > 0 && this.state.hurtTimer === 0) {
+      this.player.setAlpha(Math.floor(this.state.tick / 4) % 2 === 0 ? 0.35 : 1)
+    } else {
+      this.player.setAlpha(1)
+    }
 
     if (DEBUG_BOXES) {
       this.box.clear()
@@ -449,8 +526,106 @@ export class PlayScene extends Phaser.Scene {
 
     const ability = hasAbility(this.state, 'doubleJump') ? 'double jump' : 'no ability'
     this.hud.textContent =
-      `${this.state.roomId}   ${ability}${this.state.reachedGoal ? '   — GOAL' : ''}\n` +
-      `← → move    space jump    r respawn`
+      `${this.state.roomId}   ${ability}   hp ${this.state.hp}/${PLAYER_MAX_HP}` +
+      `${this.state.reachedGoal ? '   — GOAL' : ''}\n` +
+      `← → move    space jump    x attack    r respawn`
+    // Flash the readout red on the frame the player is hit.
+    this.hud.style.color = this.state.hurtTimer > 0 ? '#ff6b6b' : ''
+  }
+
+  /**
+   * One sprite per enemy, created on first sight and reused after.
+   *
+   * A dead enemy plays its death strip once and is hidden by the
+   * animationcomplete handler — leaving corpses standing would look like the
+   * kill never landed, and re-adding sprites every tick would leak objects.
+   */
+  private syncEnemies(): void {
+    this.telegraph.clear()
+
+    for (const enemy of this.state.enemies) {
+      const inRoom = enemy.roomId === this.state.roomId
+      const sprite = this.enemySprites.get(enemy.id)
+
+      if (!inRoom) {
+        sprite?.setVisible(false)
+        continue
+      }
+
+      let live = sprite
+      if (!live) {
+        // Bind the handler to a const: the closure outlives this iteration, and
+        // `live` is reassignable, so TypeScript cannot narrow it there.
+        const created = this.add.sprite(enemy.pos.x, enemy.pos.y, `${ENEMY.id}-idle`)
+        created.setOrigin(0.5, ENEMY.footOrigin)
+        created.setDepth(2)
+        created.on('animationcomplete', (anim: Phaser.Animations.Animation) => {
+          if (anim.key === `${ENEMY.id}-death`) created.setVisible(false)
+        })
+        this.enemySprites.set(enemy.id, created)
+        live = created
+      }
+
+      if (enemy.alive) {
+        live.setVisible(true)
+        const nudge = enemy.dir === 1 ? ENEMY.xNudge : -ENEMY.xNudge
+        live.setPosition(enemy.pos.x + nudge, enemy.pos.y)
+        live.setFlipX(enemy.dir === -1)
+
+        const current = live.anims.currentAnim?.key
+        const attackKey = `${ENEMY.id}-attack`
+        const hitKey = `${ENEMY.id}-hit`
+        const walkKey = `${ENEMY.id}-walk`
+
+        // Rising edges: a new attack restarts the swing strip, a new wound
+        // restarts the recoil strip.
+        const attackStarted = enemy.attackTimer > (this.prevEnemyAttack.get(enemy.id) ?? 0)
+        this.prevEnemyAttack.set(enemy.id, enemy.attackTimer)
+        if (attackStarted) live.play(attackKey, true)
+
+        const hitStarted = enemy.hitCooldown > (this.prevEnemyHit.get(enemy.id) ?? 0)
+        this.prevEnemyHit.set(enemy.id, enemy.hitCooldown)
+        if (hitStarted) live.play(hitKey, true)
+
+        const hitPlaying = current === hitKey && live.anims.isPlaying
+        const busy = enemy.attackTimer > 0 || hitPlaying
+        if (!busy && current !== walkKey) live.play(walkKey)
+
+        // Flash white for exactly the ticks the hitbox is live. This is the
+        // moment that matters: the wind-up animation says "something is coming",
+        // the flash says "now".
+        // Phaser 4 removed `setTintFill(color)`; FILL mode is set separately.
+        const phase = enemyAttackPhase(enemy)
+        if (phase === 'active') {
+          live.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL)
+        } else {
+          live.clearTint()
+        }
+
+        // Charge indicator above the head while winding up.
+        //
+        // The pose alone is not enough: both characters' art is about twice the
+        // width of their collider, so at the distance a fight actually happens
+        // the two sprites overlap and half the wind-up is hidden behind the
+        // player. A dot that fills as the wind-up completes is legible at any
+        // distance. It is driven by the sim's tick count, so it is deterministic.
+        if (phase === 'windup') {
+          // 0 at the start of the wind-up, 1 as the hitbox opens.
+          const elapsed = enemy.attackTotal - enemy.attackTimer
+          const progress = Math.min(1, Math.max(0, elapsed / ENEMY_WINDUP_TICKS))
+          const radius = 1.5 + progress * 3.5
+          const cx = enemy.pos.x
+          const cy = enemy.pos.y - PLAYER_H - 10
+          this.telegraph.fillStyle(0xffd166, 0.55 + progress * 0.45)
+          this.telegraph.fillCircle(cx, cy, radius)
+          this.telegraph.lineStyle(1, 0x7a3a12, 0.8)
+          this.telegraph.strokeCircle(cx, cy, radius + 1)
+        }
+      } else {
+        live.clearTint()
+        if (live.anims.currentAnim?.key !== `${ENEMY.id}-death`) live.play(`${ENEMY.id}-death`)
+      }
+    }
   }
 
   update(_time: number, delta: number): void {
@@ -469,5 +644,6 @@ export class PlayScene extends Phaser.Scene {
     }
 
     this.syncView()
+    this.syncEnemies()
   }
 }

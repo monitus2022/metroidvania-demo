@@ -51,6 +51,10 @@ if (result.warnings.length > 0) {
   console.log('\nWARNINGS')
   for (const w of result.warnings) console.log(`  ~ ${w}`)
 }
+if (result.unverified.length > 0) {
+  console.log('\nOUTSIDE THE MODEL (movement verified, this is not)')
+  for (const u of result.unverified) console.log(`  ? ${u}`)
+}
 
 const ok = result.beatable && result.softlocks.length === 0 && result.warnings.length === 0
 console.log(ok ? '\nOK\n' : '\nFAILED\n')

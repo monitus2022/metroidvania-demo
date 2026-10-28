@@ -1,4 +1,5 @@
 import { singleRoomMap } from '../../src/sim/content'
+import type { WorldState } from '../../src/sim/state'
 
 /**
  * Test levels. Deliberately tiny and readable so a failing assertion points at
@@ -86,6 +87,52 @@ export function shaftRoom(height = 14) {
 /** Column of the shaft floor in `shaftRoom`, and the row the player starts on. */
 export const SHAFT_COL = 3
 export const SHAFT_START_ROW = 11
+
+/**
+ * A flat room with one enemy standing on the floor near the middle.
+ *
+ * `patrol: 0` pins it in place (its patrol bounds collapse onto its spawn), which
+ * combat tests want: an enemy that wanders out of the swing's reach mid-test
+ * makes the failure look like a combat bug.
+ */
+export function enemyRoom(options: { patrol?: number } = {}) {
+  const air = '....................'
+  return singleRoomMap([...Array(9).fill(air), '..P.................', '#'.repeat(20), '#'.repeat(20)], {
+    id: 'enemy-room',
+    enemies: [
+      { id: 'e1', kind: 'enraged', col: 10, row: 9, patrol: options.patrol ?? 0 },
+    ],
+  })
+}
+
+/** Put the fixture's single enemy `distance` px in front of the player. */
+export function enemyInFront(s: WorldState, distance = 20): WorldState {
+  return {
+    ...s,
+    player: { ...s.player, facing: 1 },
+    enemies: s.enemies.map((e) => ({ ...e, pos: { x: s.player.pos.x + distance, y: s.player.pos.y } })),
+  }
+}
+
+/**
+ * Move the *player* onto the fixture's enemy rather than the other way round.
+ *
+ * Contact tests need both bodies to stay overlapped for many ticks. Moving the
+ * enemy off its spawn makes it walk back (its patrol bounds are anchored to
+ * spawn), so it leaves the player within a few ticks and the second hit never
+ * arrives — which looks exactly like an invulnerability bug.
+ */
+export function playerOnEnemy(s: WorldState, offset = 0): WorldState {
+  const enemy = s.enemies[0]!
+  return {
+    ...s,
+    player: {
+      ...s.player,
+      pos: { x: enemy.pos.x + offset, y: enemy.pos.y },
+      vel: { x: 0, y: 0 },
+    },
+  }
+}
 
 /** Column at which the GAP4 pit begins, in pixels. */
 export const GAP4_START_X = 12 * 16

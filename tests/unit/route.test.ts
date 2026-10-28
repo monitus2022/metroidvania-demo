@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TRANSITION_LOCK_TICKS } from '../../src/sim/constants'
+import { PLAYER_MAX_HP, TRANSITION_LOCK_TICKS } from '../../src/sim/constants'
 import { BTN, type InputMask } from '../../src/sim/input'
 import { GAME_MAP } from '../../src/sim/levels'
 import { createInitialState, runMasks, step } from '../../src/sim/step'
@@ -221,6 +221,26 @@ describe('route: the shipped level is completable with real inputs', () => {
     console.log(`route completed in ${final.tick} ticks (${(final.tick / 60).toFixed(1)}s)`)
     expect(final.tick).toBeGreaterThan(100)
     expect(final.tick).toBeLessThan(1800)
+  })
+
+  it('is survivable: the fight on the critical path does not kill the player', () => {
+    // The solver cannot answer this — it models movement, not combat — so the
+    // reference route is the only thing that can. This measures the health floor
+    // along the shortest known path, which is the number that makes enemy
+    // placement a decision rather than a guess.
+    //
+    // It is not a proof that the level is fair: a different player will take a
+    // different line and different hits. It is a floor, and it fails loudly the
+    // moment a placement makes the critical path lethal.
+    let lowest = PLAYER_MAX_HP
+    const played = play(GAME_MAP, (s) => {
+      lowest = Math.min(lowest, s.hp)
+    })
+    // eslint-disable-next-line no-console
+    console.log(`critical-path health floor: ${lowest}/${PLAYER_MAX_HP}`)
+
+    expect(played.final.reachedGoal).toBe(true)
+    expect(lowest).toBeGreaterThan(0)
   })
 })
 
