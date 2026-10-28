@@ -123,5 +123,48 @@ export const ENEMY_HP = 2
 export const ENEMY_SPEED = 40 // px/s
 /** Ticks before a killed enemy comes back, so a cleared room does not stay empty. */
 export const ENEMY_RESPAWN_TICKS = 240 // 4s
-/** Ticks an enemy cannot damage the player again after a hit. */
+/** Ticks an enemy cannot be damaged again, so one swing is one hit. */
 export const ENEMY_HIT_COOLDOWN = 30
+
+/*
+ * Enemy attacks are telegraphed. The first version damaged the player on contact
+ * with no warning at all, which is the classic cheap hit: every test passed and
+ * the fight still felt unfair, because nothing on screen said a hit was coming.
+ *
+ * An attack is now three phases, and only the middle one can hurt:
+ *
+ *   windup   the enemy stops, faces you and winds up — the readable part
+ *   active   the hitbox is live
+ *   recover  committed, cannot immediately swing again
+ */
+
+export const ENEMY_WINDUP_TICKS = 20 // 0.33s of visible telegraph
+export const ENEMY_ACTIVE_TICKS = 10
+export const ENEMY_RECOVER_TICKS = 26
+/** Ticks after recovering before it may commit again. */
+export const ENEMY_ATTACK_COOLDOWN = 30
+/**
+ * Horizontal distance at which an enemy commits to a swing.
+ *
+ * Deliberately wider than its actual reach. The two characters' art is much
+ * wider than their 12px colliders, so when an enemy commits from just inside its
+ * reach the sprites overlap and the wind-up pose is half-hidden — which defeats
+ * the point of telegraphing. It commits from farther out and covers the gap with
+ * the lunge below.
+ */
+export const ENEMY_ATTACK_RANGE = 34
+/**
+ * Forward speed while the hitbox is live. Zero during the wind-up, so the
+ * telegraph reads as a wind-up rather than a walk.
+ */
+export const ENEMY_LUNGE_SPEED = 120 // px/s
+/** Vertical tolerance, so it does not swing at a player on another ledge. */
+export const ENEMY_ATTACK_HEIGHT = 20
+/** How far in front of the enemy the swing reaches. */
+export const ENEMY_ATTACK_REACH = 18
+
+/** Ticks the player's hurt pose shows for. */
+export const PLAYER_HURT_TICKS = 20
+/** Knockback applied on taking a hit, away from the attacker. */
+export const PLAYER_KNOCKBACK_X = 95 // px/s
+export const PLAYER_KNOCKBACK_Y = -155 // px/s

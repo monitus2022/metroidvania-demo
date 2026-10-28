@@ -3,14 +3,16 @@ import { overlapsSolid } from '../../src/sim/collision'
 import {
   ATTACK_COOLDOWN_TICKS,
   ATTACK_TICKS,
+  ENEMY_ACTIVE_TICKS,
   ENEMY_HP,
   ENEMY_RESPAWN_TICKS,
+  ENEMY_WINDUP_TICKS,
   PLAYER_INVULN_TICKS,
   PLAYER_MAX_HP,
 } from '../../src/sim/constants'
 import { singleRoomMap } from '../../src/sim/content'
 import { BTN } from '../../src/sim/input'
-import { createInitialState, step } from '../../src/sim/step'
+import { createInitialState, enemyAttackPhase, step } from '../../src/sim/step'
 import type { WorldState } from '../../src/sim/state'
 import { enemyInFront, enemyRoom, playerOnEnemy } from './fixtures'
 
@@ -91,34 +93,93 @@ describe('enemy: patrol', () => {
   })
 })
 
-describe('enemy: contact damage', () => {
-  it('costs one hit point on contact, then grants invulnerability', () => {
+describe('enemy: attacks are telegraphed', () => {
+  it('does not hurt the player merely by touching them', () => {
+    // The fairness property. Contact damage with no wind-up is a cheap hit, and
+    // it is exactly what every assertion in this file used to pass on.
     let s = playerOnEnemy(createInitialState(enemyRoom()))
+    s = run(s, 0, 5)
     expect(s.hp).toBe(PLAYER_MAX_HP)
+  })
 
-    s = step(s, 0)
-    expect(s.hp).toBe(PLAYER_MAX_HP - 1)
-    expect(s.invulnTimer).toBeGreaterThan(0)
+  it('lands nothing until the wind-up is over', () => {
+    let s = playerOnEnemy(createInitialState(enemyRoom()))
+    // Overlapping the whole time, through the entire telegraph.
+    s = run(s, 0, ENEMY_WINDUP_TICKS)
+    expect(s.hp, 'damage during the wind-up').toBe(PLAYER_MAX_HP)
 
-    // Standing inside it on the next tick must not drain a second point.
     s = step(s, 0)
     expect(s.hp).toBe(PLAYER_MAX_HP - 1)
   })
 
-  it('can hit again once invulnerability lapses', () => {
+  it('is rooted through the wind-up, so the telegraph is readable', () => {
+    // Note the bound: the last tick of the wind-up count is the first active
+    // tick, and that is when the lunge starts. Stopping one short asserts the
+    // telegraph without tripping over the boundary.
     let s = playerOnEnemy(createInitialState(enemyRoom()))
-    s = run(s, 0, 1)
+    s = step(s, 0) // commits
+    const x = s.enemies[0]!.pos.x
+    s = run(s, 0, ENEMY_WINDUP_TICKS - 1)
+    expect(enemyAttackPhase(s.enemies[0]!)).toBe('windup')
+    expect(s.enemies[0]!.pos.x).toBe(x)
+  })
+
+  it('lunges only while the hitbox is live', () => {
+    let s = playerOnEnemy(createInitialState(enemyRoom()), 34)
+    s = step(s, 0)
+    const x = s.enemies[0]!.pos.x
+    // Through the wind-up: still.
+    s = run(s, 0, ENEMY_WINDUP_TICKS - 1)
+    expect(s.enemies[0]!.pos.x).toBe(x)
+    // Into the active window: it closes the gap, and the player was on its right.
+    s = run(s, 0, 4)
+    expect(enemyAttackPhase(s.enemies[0]!)).toBe('active')
+    expect(s.enemies[0]!.pos.x).toBeGreaterThan(x)
+  })
+
+  it('can be dodged by leaving range during the wind-up', () => {
+    // Stand just inside its reach, then walk away while it winds up.
+    let s = playerOnEnemy(createInitialState(enemyRoom()), 14)
+    s = run(s, 0, 3) // it commits, facing right
+    expect(s.enemies[0]!.attackTimer).toBeGreaterThan(0)
+
+    s = run(s, BTN.LEFT, ENEMY_WINDUP_TICKS + ENEMY_ACTIVE_TICKS + 4)
+    expect(s.hp, 'a dodgeable attack still landed').toBe(PLAYER_MAX_HP)
+  })
+
+  it('knocks the player back and shows the hurt pose when it lands', () => {
+    // Offset rather than exactly co-located: the knockback direction is
+    // sign(player.x - enemy.x), which is zero when they sit on the same pixel.
+    let s = playerOnEnemy(createInitialState(enemyRoom()), 6)
+    s = run(s, 0, ENEMY_WINDUP_TICKS + 1)
+
     expect(s.hp).toBe(PLAYER_MAX_HP - 1)
-    s = run(s, 0, PLAYER_INVULN_TICKS)
-    expect(s.hp).toBe(PLAYER_MAX_HP - 2)
+    expect(s.hurtTimer).toBeGreaterThan(0)
+    expect(s.invulnTimer).toBeGreaterThan(0)
+    // Knocked up and away, so the player is not left standing inside it.
+    expect(s.player.vel.y).toBeLessThan(0)
+    expect(s.player.vel.x).toBeGreaterThan(0) // away from the enemy on the left
+  })
+
+  it('does not drain a second point while invulnerable', () => {
+    let s = playerOnEnemy(createInitialState(enemyRoom()), 6)
+    s = run(s, 0, ENEMY_WINDUP_TICKS + 1)
+    expect(s.hp).toBe(PLAYER_MAX_HP - 1)
+
+    // Stay inside it for the rest of the invulnerable window. Note the bound:
+    // a full ENEMY attack cycle is shorter than 90 ticks, so running the whole
+    // window would legitimately let a second swing land right at the end.
+    s = playerOnEnemy(s, 6)
+    s = run(s, 0, PLAYER_INVULN_TICKS - 2)
+    expect(s.invulnTimer).toBeGreaterThan(0)
+    expect(s.hp).toBe(PLAYER_MAX_HP - 1)
   })
 
   it('sends the player back to the room entry when health runs out', () => {
     const start = createInitialState(enemyRoom())
     const entryX = start.player.pos.x
-    // One hit point left, then touch the enemy.
     let s = playerOnEnemy({ ...start, hp: 1 })
-    s = step(s, 0)
+    s = run(s, 0, ENEMY_WINDUP_TICKS + 1)
 
     expect(s.hp).toBe(PLAYER_MAX_HP)
     expect(s.player.pos.x).toBe(entryX)
@@ -178,9 +239,11 @@ describe('enemy: the swing', () => {
   })
 
   it('a dead enemy stops hurting you', () => {
-    let s = enemyInFront(createInitialState(enemyRoom()), 0)
+    // Swing from 20px: at 0px the enemy's body only just touches the front edge
+    // of the swing box, so the hit depends on sub-pixel patrol jitter.
+    let s = enemyInFront(createInitialState(enemyRoom()), 20)
     for (let swing = 0; swing < ENEMY_HP; swing++) {
-      s = enemyInFront(s, 0)
+      s = enemyInFront(s, 20)
       s = step(s, 0)
       s = step(s, BTN.ATTACK)
       s = run(s, BTN.ATTACK, ATTACK_COOLDOWN_TICKS + 2)
@@ -189,7 +252,8 @@ describe('enemy: the swing', () => {
 
     // Sit inside the corpse with invulnerability expired: no further damage.
     const hpBefore = s.hp
-    s = run({ ...s, invulnTimer: 0 }, 0, 30)
+    s = playerOnEnemy({ ...s, invulnTimer: 0 })
+    s = run(s, 0, ENEMY_WINDUP_TICKS + ENEMY_ACTIVE_TICKS + 4)
     expect(s.hp).toBe(hpBefore)
   })
 })
