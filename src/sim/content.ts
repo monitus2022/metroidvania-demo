@@ -52,6 +52,25 @@ export interface PropDef {
 /** Prop kinds the renderer can draw. Content may not invent new ones. */
 export const KNOWN_PROP_KINDS = ['flag', 'chest'] as const
 
+/**
+ * An enemy placed in a room. It walks `patrol` tiles either side of `col` and
+ * turns at walls, ledges and its patrol bounds.
+ */
+export interface EnemyDef {
+  readonly id: string
+  readonly kind: string
+  readonly col: number
+  readonly row: number
+  readonly patrol: number
+}
+
+/**
+ * Enemy kinds the game knows how to simulate. Separate from the renderer's
+ * sprite table, but the two must agree — a kind the sim runs and the renderer
+ * cannot draw is an invisible enemy.
+ */
+export const KNOWN_ENEMY_KINDS = ['enraged'] as const
+
 export interface RoomDef {
   readonly id: string
   readonly grid: TileGrid
@@ -60,6 +79,7 @@ export interface RoomDef {
   readonly doors: readonly DoorDef[]
   readonly items: readonly ItemDef[]
   readonly props: readonly PropDef[]
+  readonly enemies: readonly EnemyDef[]
 }
 
 export interface GoalDef {
@@ -90,6 +110,7 @@ export interface RoomsFile {
     readonly doors?: readonly DoorDef[]
     readonly items?: readonly ItemDef[]
     readonly props?: readonly PropDef[]
+    readonly enemies?: readonly EnemyDef[]
   }[]
 }
 
@@ -114,6 +135,7 @@ export function loadGameMap(file: RoomsFile, gates: GatesFile = { gates: {} }): 
       doors: room.doors ?? [],
       items: room.items ?? [],
       props: room.props ?? [],
+      enemies: room.enemies ?? [],
     }
   }
 
@@ -140,6 +162,7 @@ export function singleRoomMap(
     doors?: readonly DoorDef[]
     items?: readonly ItemDef[]
     props?: readonly PropDef[]
+    enemies?: readonly EnemyDef[]
   } = {},
 ): GameMap {
   const id = options.id ?? 'room'
@@ -159,6 +182,7 @@ export function singleRoomMap(
         doors: options.doors ?? [],
         items: options.items ?? [],
         props: options.props ?? [],
+        enemies: options.enemies ?? [],
       },
     },
     gates: {},

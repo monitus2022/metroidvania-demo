@@ -10,6 +10,7 @@ export const BTN = {
   LEFT: 1 << 0,
   RIGHT: 1 << 1,
   JUMP: 1 << 2,
+  ATTACK: 1 << 3,
 } as const
 
 export type InputMask = number

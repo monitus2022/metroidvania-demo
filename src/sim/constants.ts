@@ -99,3 +99,29 @@ export const JUMP_BUFFER = 0.12 // s
 
 /** Releasing jump early clamps upward speed to this, giving variable height. */
 export const JUMP_RELEASE_SPEED = 110 // px/s
+
+/* ------------------------------------------------------------------ combat --
+ *
+ * Combat is deliberately small: one melee verb, one enemy type. The point is
+ * that damage, death and respawn are *deterministic*, so they can be tested,
+ * while difficulty is not and has to be a human judgement.
+ */
+
+export const PLAYER_MAX_HP = 3
+
+/** Ticks of invulnerability after taking a hit, so one touch is one hit. */
+export const PLAYER_INVULN_TICKS = 90 // 1.5s
+
+/** Ticks the attack hitbox is live. Press-edge only: holding does not spam. */
+export const ATTACK_TICKS = 12
+export const ATTACK_COOLDOWN_TICKS = 24
+/** How far in front of the player the swing reaches. */
+export const ATTACK_REACH = 16
+
+export const ENEMY_HP = 2
+/** Patrol speed. Slower than the player, so walking away always works. */
+export const ENEMY_SPEED = 40 // px/s
+/** Ticks before a killed enemy comes back, so a cleared room does not stay empty. */
+export const ENEMY_RESPAWN_TICKS = 240 // 4s
+/** Ticks an enemy cannot damage the player again after a hit. */
+export const ENEMY_HIT_COOLDOWN = 30

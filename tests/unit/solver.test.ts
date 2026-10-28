@@ -27,6 +27,7 @@ interface MutRoom {
   }[]
   items?: { id: string; ability: string; col: number; row: number }[]
   props?: { id: string; kind: string; col: number; row: number }[]
+  enemies?: { id: string; kind: string; col: number; row: number; patrol: number }[]
 }
 interface MutRooms {
   startRoom: string
@@ -60,6 +61,13 @@ describe('content: the shipped map', () => {
     expect(r.warnings).toEqual([])
     expect(r.softlocks).toEqual([])
     expect(r.beatable).toBe(true)
+    // Enemies are outside the movement model. They are reported, not warned
+    // about: there is nothing to fix, and it must not fail a build.
+    // In map order, not alphabetical.
+    expect(r.unverified).toEqual([
+      'room "shaft" places 2 enemies: movement is verified, combat is not',
+      'room "foundry" places 1 enemy: movement is verified, combat is not',
+    ])
   })
 
   it('requires exactly the double jump and the wall climb to finish', () => {
@@ -338,6 +346,61 @@ describe('solver: content validation', () => {
         )
       }
     }
+  })
+
+  it('rejects an enemy of a kind the game cannot simulate', () => {
+    const rooms = mutRooms()
+    roomIn(rooms, 'foundry').enemies![0]!.kind = 'dragon'
+    expect(run(rooms).errors).toContain(
+      'enemy "foundry-husk" has unknown kind "dragon" (known: enraged)',
+    )
+  })
+
+  it('rejects an enemy with no ground under it', () => {
+    // Over a pit it falls out of the room on the first tick, which is silent in
+    // play and looks like the enemy was never placed.
+    const rooms = mutRooms()
+    roomIn(rooms, 'foundry').enemies![0]!.col = 9 // the three-tile gap
+    expect(run(rooms).errors).toContain('enemy "foundry-husk" has no ground under it in "foundry"')
+  })
+
+  it('rejects an enemy buried in rock or off the map', () => {
+    const buried = mutRooms()
+    roomIn(buried, 'foundry').enemies![0]!.row = 11
+    expect(run(buried).errors).toContain('enemy "foundry-husk" is inside solid terrain in "foundry"')
+
+    const offMap = mutRooms()
+    roomIn(offMap, 'foundry').enemies![0]!.col = 99
+    expect(run(offMap).errors).toContain('enemy "foundry-husk" is outside room "foundry"')
+  })
+
+  it('rejects a negative patrol radius', () => {
+    const rooms = mutRooms()
+    roomIn(rooms, 'foundry').enemies![0]!.patrol = -1
+    expect(run(rooms).errors).toContain('enemy "foundry-husk" has negative patrol -1')
+  })
+
+  it('keeps every shipped enemy on ground it can stand on', () => {
+    const map = loadGameMap(roomsFile as RoomsFile, gatesFile as GatesFile)
+    let total = 0
+    for (const roomId of map.order) {
+      const room = map.rooms[roomId]!
+      for (const enemy of room.enemies) {
+        total++
+        expect(isSolid(room.grid, enemy.col, enemy.row), `${enemy.id} sits in rock`).toBe(false)
+        expect(isSolid(room.grid, enemy.col, enemy.row + 1), `${enemy.id} floats`).toBe(true)
+      }
+    }
+    expect(total).toBeGreaterThan(0)
+  })
+
+  it('reports every room with an enemy as outside the movement model', () => {
+    const r = run()
+    expect(r.unverified.length).toBe(2)
+    expect(r.unverified.join(' ')).toContain('"shaft"')
+    expect(r.unverified.join(' ')).toContain('"foundry"')
+    // Not a warning: warnings fail the build, and this is permanent.
+    expect(r.warnings).toEqual([])
   })
 
   it('reports validation errors instead of guessing at reachability', () => {

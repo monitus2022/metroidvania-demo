@@ -52,14 +52,36 @@ Scores against the terrain body, over the idle frame:
 Ember separated well but read orange, not red. Blood was properly red and sank
 into the dirt. This is red at ember's brightness.
 
-## Not done yet
+## Behaviour
 
-These are **art only**. There is no enemy behaviour: no sim entity, AI, hitbox,
-damage, death handling, or respawn, and no room places one. The sheet set
-(Idle, Walk, Attack1, Hit, Death) is the minimum an enemy needs, and it is ready
-for that work.
+Wired as of M4. One enemy type, `enraged`, with a deliberately small verb set:
 
-Worth knowing before wiring it: an enemy that blocks a corridor changes the map's
-reachability, and the solver models only the player's movement. Enemy placement
-is therefore unverified — a room the solver calls beatable could be one the
-player cannot get past.
+- **Patrol** — walks `patrol` tiles either side of its spawn column and turns at
+  walls, ledges and its patrol bounds. Ledges matter: an enemy that did not turn
+  at them would walk off the platform it was placed on.
+- **Contact damage** — touching the player costs one hit point, then the player
+  gets 1.5s of invulnerability so a single collision is a single hit.
+- **Hit and death** — two hits kill it; one swing is one hit (a per-enemy
+  immunity window, or the 12-tick hitbox would deal 12 damage).
+- **Respawn** — 4 seconds later, at its spawn.
+
+Player: 3 hit points, 1.5s invulnerability, one melee verb on `X`, respawn at the
+room entry on death. All of it lives in `src/sim/step.ts` and is deterministic.
+
+## What this is not
+
+The solver cannot see combat. It answers "can the player reach this tile", not
+"can they survive the trip", so every room holding an enemy is reported in the
+solver's `unverified` list — deliberately *not* a warning, because there is
+nothing to fix and it must not fail a build.
+
+The measurements that do exist:
+
+- `tests/unit/enemy.test.ts` pins damage, invulnerability, the one-hit-per-swing
+  rule, death, respawn and non-penetration.
+- `tests/unit/route.test.ts` measures the **critical-path health floor**: the
+  reference playthrough reaches the goal with 2 of 3 hit points left, so the
+  placed enemies make the shortest route a fight rather than a wall.
+
+What none of that proves is whether the fight is *good*: the numbers (3 HP, 40
+px/s, 4s respawn) are feel choices and belong to a human.
