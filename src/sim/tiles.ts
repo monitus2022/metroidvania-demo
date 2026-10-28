@@ -19,7 +19,10 @@ export interface TileGrid {
  * Build a grid from ASCII rows, which keeps fixtures readable and diffable.
  *   '#' solid   '.' empty   'P' empty, marks the spawn (feet at tile bottom)
  */
-export function gridFromRows(rows: readonly string[]): TileGrid {
+export function gridFromRows(
+  rows: readonly string[],
+  spawnFallback?: { readonly col: number; readonly row: number },
+): TileGrid {
   const h = rows.length
   if (h === 0) throw new Error('gridFromRows: no rows')
   const w = Math.max(...rows.map((r) => r.length))
@@ -40,7 +43,12 @@ export function gridFromRows(rows: readonly string[]): TileGrid {
     }
   }
 
-  if (!spawn) throw new Error('gridFromRows: no spawn marker (P)')
+  // A room entered through a door has no 'P' of its own: its arrival cell is
+  // defined by the door leading into it, which the content loader supplies.
+  if (!spawn) {
+    if (!spawnFallback) throw new Error('gridFromRows: no spawn marker (P) and no fallback cell')
+    spawn = { x: spawnFallback.col * TILE + TILE / 2, y: (spawnFallback.row + 1) * TILE }
+  }
   return { w, h, solid, spawn }
 }
 

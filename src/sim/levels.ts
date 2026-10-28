@@ -1,26 +1,17 @@
-import { gridFromRows } from './tiles'
+import roomsFile from '../../content/rooms.json'
+import { loadGameMap, type RoomsFile } from './content'
 
 /**
- * Interim playable level, as ASCII rows.
+ * The real map, loaded from `content/`.
  *
- * M2 replaces this with `content/rooms.json` read by both the game and the
- * solver. Until then this is the one place level geometry lives.
- *
- * 40 x 14 tiles. Flat floor with a 4-tile pit at cols 18-21 and a platform.
+ * The game and the solver read the same file: there is no second copy of level
+ * geometry to drift out of sync. Multi-room transitions arrive in M3, so for
+ * now the render layer boots the start room only.
  */
-export const DEMO_LEVEL = gridFromRows([
-  '........................................',
-  '........................................',
-  '........................................',
-  '........................................',
-  '........................................',
-  '........................................',
-  '........................................',
-  '........................................',
-  '........................................',
-  '......####..............................',
-  '........................................',
-  '..P.....................................',
-  '##################....##################',
-  '##################....##################',
-])
+export const GAME_MAP = loadGameMap(roomsFile as RoomsFile)
+
+/** The room the game boots into. */
+export const START_LEVEL = GAME_MAP.rooms[GAME_MAP.startRoom]!.grid
+
+/** Alias kept so the M1 tests and the render layer keep working unchanged. */
+export const DEMO_LEVEL = START_LEVEL
