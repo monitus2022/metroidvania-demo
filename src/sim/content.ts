@@ -57,6 +57,8 @@ export interface GameMap {
   readonly startRoom: string
   readonly goal: GoalDef
   readonly rooms: Readonly<Record<string, RoomDef>>
+  /** Gate id -> required ability. Carried here so the sim needs no side table. */
+  readonly gates: Readonly<Record<string, string>>
   /** Room ids in file order. */
   readonly order: readonly string[]
 }
@@ -81,7 +83,7 @@ export interface GatesFile {
   readonly gates: Readonly<Record<string, string>>
 }
 
-export function loadGameMap(file: RoomsFile): GameMap {
+export function loadGameMap(file: RoomsFile, gates: GatesFile = { gates: {} }): GameMap {
   const order = file.rooms.map((r) => r.id)
   const rooms: Record<string, RoomDef> = {}
 
@@ -98,7 +100,43 @@ export function loadGameMap(file: RoomsFile): GameMap {
     }
   }
 
-  return { startRoom: file.startRoom, goal: file.goal, rooms, order }
+  return {
+    startRoom: file.startRoom,
+    goal: file.goal,
+    rooms,
+    gates: { ...gates.gates },
+    order,
+  }
+}
+
+/**
+ * A one-room map from ASCII rows, for tests and fixtures.
+ *
+ * `gridFromRows` still understands the 'P' spawn marker, so single-room
+ * fixtures stay as readable as they were before the map type existed.
+ */
+export function singleRoomMap(
+  rows: readonly string[],
+  options: {
+    id?: string
+    goal?: GoalDef
+    doors?: readonly DoorDef[]
+    items?: readonly ItemDef[]
+  } = {},
+): GameMap {
+  const id = options.id ?? 'room'
+  const grid = gridFromRows(rows)
+  const entry = {
+    col: Math.floor(grid.spawn.x / 16),
+    row: Math.floor(grid.spawn.y / 16) - 1,
+  }
+  return {
+    startRoom: id,
+    goal: options.goal ?? { room: id, col: entry.col, row: entry.row },
+    rooms: { [id]: { id, grid, entry, doors: options.doors ?? [], items: options.items ?? [] } },
+    gates: {},
+    order: [id],
+  }
 }
 
 export function loadGates(file: GatesFile): Record<string, string> {

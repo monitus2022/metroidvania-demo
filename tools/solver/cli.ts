@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { loadGameMap, loadGates, type GatesFile, type RoomsFile } from '../../src/sim/content'
+import { loadGameMap, type GatesFile, type RoomsFile } from '../../src/sim/content'
 import { solve } from './reachability'
 
 /**
@@ -17,10 +17,9 @@ const contentDir = join(here, '..', '..', 'content')
 const readJson = <T>(name: string): T =>
   JSON.parse(readFileSync(join(contentDir, name), 'utf8')) as T
 
-const map = loadGameMap(readJson<RoomsFile>('rooms.json'))
-const gates = loadGates(readJson<GatesFile>('gates.json'))
+const map = loadGameMap(readJson<RoomsFile>('rooms.json'), readJson<GatesFile>('gates.json'))
 
-const result = solve(map, gates)
+const result = solve(map)
 
 const line = (label: string, value: string): void => {
   console.log(`  ${label.padEnd(18)} ${value}`)

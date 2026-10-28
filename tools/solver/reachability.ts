@@ -40,17 +40,23 @@ export const BASE_MOVEMENT: Movement = { jumpHeight: 2, jumpDistance: 5 }
 /**
  * Movement granted by each ability.
  *
- * doubleJump's numbers are a *guess*: the simulation does not implement the
- * ability yet (that is M3), so nothing can measure it. Treat them as a
- * placeholder and re-derive them from the sim the moment the ability exists.
- * `UNVERIFIED_ABILITIES` keeps that debt visible.
+ * Every number here is measured from the simulation by
+ * `tests/unit/anchor.test.ts`, which builds rooms with growing pits and
+ * growing ledges and runs the real physics. Do not hand-edit these: change the
+ * tuning constants and let the measurement tell you the new envelope.
  */
 export const ABILITY_MOVEMENT: Readonly<Record<string, Partial<Movement>>> = {
   doubleJump: { jumpHeight: 5, jumpDistance: 9 },
 }
 
-/** Abilities whose movement numbers no test can yet check against the sim. */
-export const UNVERIFIED_ABILITIES: readonly string[] = ['doubleJump']
+/**
+ * Abilities whose movement numbers no test can yet check against the sim.
+ *
+ * Empty since M3 implemented the double jump. A new ability must be added here
+ * when it is declared and removed once the anchor test measures it — otherwise
+ * a guess silently becomes load-bearing.
+ */
+export const UNVERIFIED_ABILITIES: readonly string[] = []
 
 /** Every ability id the solver knows about. Content may not invent new ones. */
 export const KNOWN_ABILITIES: readonly string[] = Object.keys(ABILITY_MOVEMENT)
@@ -232,7 +238,8 @@ function validate(map: GameMap, gates: Readonly<Record<string, string>>): string
   return errors
 }
 
-export function solve(map: GameMap, gates: Readonly<Record<string, string>>): SolveResult {
+export function solve(map: GameMap): SolveResult {
+  const gates = map.gates
   const errors = validate(map, gates)
   const warnings: string[] = []
 

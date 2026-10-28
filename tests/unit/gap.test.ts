@@ -23,19 +23,22 @@ interface Attempt {
  *
  * "Cleared" deliberately means *never dropped below the floor surface*.
  * Merely ending up past the pit is not enough: a body that falls in and then
- * jumps back out also ends up past it, which is a different (and much easier)
+ * jumps back out also ends up past it, which is a different (and easier)
  * manoeuvre.
  */
 function attempt(jumpFrame: number): Attempt {
   let s = createInitialState(GAP4)
   let fell = false
   for (let i = 0; i < 300; i++) {
-    let mask = BTN.RIGHT
-    if (i >= jumpFrame && i < jumpFrame + JUMP_HOLD_TICKS) mask |= BTN.JUMP
+    const mask = BTN.RIGHT | (i >= jumpFrame && i < jumpFrame + JUMP_HOLD_TICKS ? BTN.JUMP : 0)
     s = step(s, mask)
     if (s.player.pos.y > FLOOR_Y + 1e-6) fell = true
   }
-  return { cleared: !fell && s.player.onGround && s.player.pos.x >= GAP4_END_X, fell, finalX: s.player.pos.x }
+  return {
+    cleared: !fell && s.player.onGround && s.player.pos.x >= GAP4_END_X,
+    fell,
+    finalX: s.player.pos.x,
+  }
 }
 
 /** Every jump frame in 0..90 that clears the pit. */
@@ -49,7 +52,9 @@ describe('4-tile gap', () => {
   it('is clearable across a contiguous window of jump frames', () => {
     const window = clearingWindow()
     // eslint-disable-next-line no-console
-    console.log(`GAP4 clearing window: ${window[0]}..${window[window.length - 1]} (${window.length} frames)`)
+    console.log(
+      `GAP4 clearing window: ${window[0]}..${window[window.length - 1]} (${window.length} frames)`,
+    )
 
     expect(window.length).toBeGreaterThan(0)
 
@@ -75,13 +80,9 @@ describe('4-tile gap', () => {
     expect(a.cleared).toBe(false)
   })
 
-  it('cannot be cleared by walking off without jumping anywhere in the window', () => {
-    // Sanity: the window must not include frames before the run-up finishes.
+  it('the run-up starts well before the pit', () => {
     const window = clearingWindow()
-    const first = window[0]!
-    const spawnX = createInitialState(GAP4).player.pos.x
-    // By the first clearing frame the player must have travelled towards the pit.
-    expect(first).toBeGreaterThan(0)
-    expect(spawnX).toBeLessThan(GAP4_START_X)
+    expect(window[0]).toBeGreaterThan(0)
+    expect(createInitialState(GAP4).player.pos.x).toBeLessThan(GAP4_START_X)
   })
 })

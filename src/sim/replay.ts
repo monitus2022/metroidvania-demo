@@ -1,7 +1,7 @@
 import { FIXED_DT } from './constants'
+import type { GameMap } from './content'
 import { createInitialState, step } from './step'
 import type { WorldState } from './state'
-import type { TileGrid } from './tiles'
 
 /**
  * Fixed-precision float, so hashes are stable and never differ on hair-thin
@@ -16,6 +16,7 @@ const q = (n: number): string => (Object.is(n, -0) ? 0 : n).toFixed(4)
 export function hashState(s: WorldState): string {
   const canon = [
     s.tick,
+    s.roomId,
     q(s.player.pos.x),
     q(s.player.pos.y),
     q(s.player.vel.x),
@@ -24,6 +25,11 @@ export function hashState(s: WorldState): string {
     s.player.facing,
     q(s.player.coyoteTimer),
     q(s.player.jumpBufferTimer),
+    s.player.airJumpsUsed,
+    s.abilities.join(','),
+    s.collected.join(','),
+    s.transitionLock,
+    s.reachedGoal ? 1 : 0,
     s.prevInput,
     s.rngSeed,
   ].join('|')
@@ -44,13 +50,13 @@ export interface Replay {
   readonly inputs: InputLog
 }
 
-export function runReplay(level: TileGrid, replay: Replay, dt = FIXED_DT): WorldState {
-  let s = createInitialState(level, replay.seed)
+export function runReplay(map: GameMap, replay: Replay, dt = FIXED_DT): WorldState {
+  let s = createInitialState(map, replay.seed)
   for (const mask of replay.inputs) s = step(s, mask, dt)
   return s
 }
 
 /** Re-run a replay and return the final state hash. */
-export function replayHash(level: TileGrid, replay: Replay, dt = FIXED_DT): string {
-  return hashState(runReplay(level, replay, dt))
+export function replayHash(map: GameMap, replay: Replay, dt = FIXED_DT): string {
+  return hashState(runReplay(map, replay, dt))
 }

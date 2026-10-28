@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import gatesFile from '../../content/gates.json'
 import roomsFile from '../../content/rooms.json'
-import { loadGameMap, loadGates, type GatesFile, type RoomsFile } from '../../src/sim/content'
+import { loadGameMap, type GatesFile, type RoomsFile } from '../../src/sim/content'
 import { isSolid } from '../../src/sim/tiles'
 import { UNVERIFIED_ABILITIES, solve } from '../../tools/solver/reachability'
 
@@ -40,7 +40,7 @@ const mutRooms = (): MutRooms => JSON.parse(JSON.stringify(roomsFile)) as MutRoo
 const mutGates = (): MutGates => JSON.parse(JSON.stringify(gatesFile)) as MutGates
 
 function run(rooms: MutRooms = mutRooms(), gates: MutGates = mutGates()) {
-  return solve(loadGameMap(rooms as unknown as RoomsFile), loadGates(gates as unknown as GatesFile))
+  return solve(loadGameMap(rooms as unknown as RoomsFile, gates as unknown as GatesFile))
 }
 
 const roomIn = (rooms: MutRooms, id: string): MutRoom => {
@@ -263,9 +263,9 @@ describe('solver: content validation', () => {
 })
 
 describe('solver: unverified ability debt', () => {
-  it('keeps doubleJump on the unverified list until the sim implements it', () => {
-    // The sim has no double jump, so the solver's numbers for it are guesses.
-    // This test exists so the debt cannot be silently forgotten in M3.
-    expect(UNVERIFIED_ABILITIES).toContain('doubleJump')
+  it('has no unmeasured abilities once M3 implements the double jump', () => {
+    // The anchor test now measures every ability the solver assumes. A new
+    // ability must start on this list and be removed when it is measured.
+    expect(UNVERIFIED_ABILITIES).toEqual([])
   })
 })

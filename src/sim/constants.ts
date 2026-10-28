@@ -30,6 +30,22 @@ export const AIR_FRICTION = 300 // px/s^2
 
 export const JUMP_VELOCITY = -430 // px/s (negative is up)
 
+/** Impulse for the mid-air jump granted by the doubleJump ability. */
+export const DOUBLE_JUMP_VELOCITY = -390
+
+/** Extra jumps available mid-air once the doubleJump ability is held. */
+export const MAX_AIR_JUMPS = 1
+
+/**
+ * Ticks during which door transitions are suppressed after arriving in a room.
+ * Without it, a door whose arrival cell overlaps a door back would ping-pong.
+ */
+export const TRANSITION_LOCK_TICKS = 12
+
+/** The viewport. Smaller than a room, so the camera has something to do. */
+export const VIEW_W = 15 * TILE // 240
+export const VIEW_H = 10 * TILE // 160
+
 /** Grace period after walking off a ledge during which a jump still counts. */
 export const COYOTE_TIME = 0.1 // s
 
