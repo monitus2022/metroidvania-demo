@@ -1,0 +1,7 @@
+# Cloudflare Pages configuration.
+#
+# Only needed for CLI deploys (`wrangler pages deploy`). If you deploy through
+# the Cloudflare dashboard's Git integration, the same values go in the
+# project's build settings instead, and this file is simply ignored.
+name = "metroidvania-demo"
+pages_build_output_dir = "dist"
