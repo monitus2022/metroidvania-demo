@@ -32,6 +32,15 @@ export interface Movement {
   readonly jumpHeight: number
   /** Tiles of horizontal reach available during a jump. */
   readonly jumpDistance: number
+  /**
+   * Can move up and down any column flanked by rock, without needing a floor.
+   *
+   * This is qualitatively different from a jump: it is unbounded vertically, so
+   * it cannot be expressed as a height budget. It is modelled as an extra edge
+   * between vertically adjacent cells that both have a solid side neighbour,
+   * which is exactly what the sim's `touchingWall` reports.
+   */
+  readonly climbWalls?: boolean
 }
 
 /** Base movement, always available. Measured from the sim — see anchor.test.ts. */
@@ -47,6 +56,7 @@ export const BASE_MOVEMENT: Movement = { jumpHeight: 2, jumpDistance: 3 }
  */
 export const ABILITY_MOVEMENT: Readonly<Record<string, Partial<Movement>>> = {
   doubleJump: { jumpHeight: 5, jumpDistance: 8 },
+  wallClimb: { climbWalls: true },
 }
 
 /**
@@ -97,18 +107,45 @@ function corridorClear(g: TileGrid, row: number, col: number, dx: number): boole
   return true
 }
 
+/**
+ * A cell a wall climber can grip: rock on either side.
+ *
+ * Out-of-bounds counts as solid, which matches the sim — the player really can
+ * climb the left and right edges of a room.
+ */
+const hasWallNeighbour = (g: TileGrid, col: number, row: number): boolean =>
+  isSolid(g, col - 1, row) || isSolid(g, col + 1, row)
+
 function neighbours(g: TileGrid, cell: Cell, mv: Movement): Cell[] {
   const { col, row } = cell
   if (!isEmpty(g, col, row)) return []
+
+  const out: Cell[] = []
+
+  // Wall climbing is checked before the "airborne falls straight down" rule,
+  // because a shaft is precisely a column of cells with no floor under them.
+  if (mv.climbWalls && hasWallNeighbour(g, col, row)) {
+    for (const dy of [-1, 1]) {
+      const tr = row + dy
+      if (isEmpty(g, col, tr) && hasWallNeighbour(g, col, tr)) out.push({ col, row: tr })
+    }
+    // Pull yourself onto a ledge at the same height. This is the move that ends
+    // a climb: the sim gets it for free because a body at ledge-top height that
+    // drifts sideways is already standing on the ledge.
+    for (const dx of [-1, 1]) {
+      if (isEmpty(g, col + dx, row) && isStandable(g, col + dx, row)) {
+        out.push({ col: col + dx, row })
+      }
+    }
+  }
 
   // Airborne: the only move is straight down to the first surface.
   if (!isStandable(g, col, row)) {
     let r = row + 1
     while (!isSolid(g, col, r)) r++
-    return r - 1 > row ? [{ col, row: r - 1 }] : []
+    if (r - 1 > row) out.push({ col, row: r - 1 })
+    return out
   }
-
-  const out: Cell[] = []
 
   // Sideways at the same level: walk, or step off a ledge and fall.
   for (let dx = -mv.jumpDistance; dx <= mv.jumpDistance; dx++) {

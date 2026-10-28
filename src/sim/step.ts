@@ -18,8 +18,10 @@ import {
   RUN_MAX,
   TILE,
   TRANSITION_LOCK_TICKS,
+  WALL_CLIMB_SPEED,
+  WALL_SLIDE_SPEED,
 } from './constants'
-import { moveX, moveY } from './collision'
+import { moveX, moveY, touchingWall } from './collision'
 import type { DoorDef, GameMap } from './content'
 import { BTN, axisX, held, type InputMask } from './input'
 import type { PlayerState, WorldState } from './state'
@@ -142,11 +144,26 @@ export function step(state: WorldState, input: InputMask, dt: number = FIXED_DT)
     }
   }
 
+  // --- wall climb ---
+  // Airborne, pressing into a wall, and holding the ability: cling. Gravity is
+  // replaced below rather than added to, so these speeds are the real rate.
+  const wall = hasAbility(next, 'wallClimb') && !pl.onGround ? touchingWall(pl, gridOf(next)) : 0
+  const clinging = wall !== 0 && dir === wall
+
   // Variable jump height: releasing early clips the rise.
-  if (!jumpHeld && pl.vel.y < -JUMP_RELEASE_SPEED) pl.vel.y = -JUMP_RELEASE_SPEED
+  if (!clinging && !jumpHeld && pl.vel.y < -JUMP_RELEASE_SPEED) {
+    pl.vel.y = -JUMP_RELEASE_SPEED
+  }
 
   // --- gravity ---
-  pl.vel.y = Math.min(MAX_FALL, pl.vel.y + GRAVITY * dt)
+  if (clinging) {
+    pl.vel.y = jumpHeld ? -WALL_CLIMB_SPEED : WALL_SLIDE_SPEED
+    // Touching a wall refreshes the mid-air jump budget, so a climb can be
+    // abandoned part-way rather than trapping the player on the wall.
+    pl.airJumpsUsed = 0
+  } else {
+    pl.vel.y = Math.min(MAX_FALL, pl.vel.y + GRAVITY * dt)
+  }
 
   // --- integrate with collision ---
   moveX(pl, gridOf(next), pl.vel.x * dt)

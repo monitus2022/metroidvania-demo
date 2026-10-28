@@ -1,6 +1,3 @@
 {
-  "comment": "gate id -> ability id required to pass it. Door definitions reference these by id from rooms.json.",
-  "gates": {
-    "gate-to-spire": "doubleJump"
-  }
+  "gates": {}
 }

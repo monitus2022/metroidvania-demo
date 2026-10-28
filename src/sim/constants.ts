@@ -78,6 +78,19 @@ export const DOOR_ARRIVAL_INSET = 3
 export const VIEW_W = 15 * TILE // 240
 export const VIEW_H = 10 * TILE // 160
 
+/**
+ * Wall climbing (granted by the `wallClimb` ability).
+ *
+ * While airborne and pressing into a wall the player clings: gravity is skipped
+ * entirely, so these two numbers are the whole vertical behaviour. Holding jump
+ * climbs up; otherwise the player slides down slowly rather than dropping.
+ *
+ * Deliberately slower than a jump — a climb should feel like work, and it keeps
+ * a wall from being a free substitute for the double jump.
+ */
+export const WALL_CLIMB_SPEED = 90 // px/s upward while holding jump on a wall
+export const WALL_SLIDE_SPEED = 55 // px/s downward while clinging and not climbing
+
 /** Grace period after walking off a ledge during which a jump still counts. */
 export const COYOTE_TIME = 0.1 // s
 

@@ -39,29 +39,34 @@ const x = (s: WorldState): number => s.player.pos.x
 const inRoom = (id: string) => (s: WorldState) => s.roomId === id
 
 /**
- * Where to start the climb.
+ * Waypoint predicates.
  *
- * This has to happen *before* the ledge's overhang, not at its face: the ledge
- * is a solid block two tiles thick, so a player who drifts under it first hits
- * its underside with their head and can never rise past it. Measured by search
- * (see the M3 notes): any x from 120 to 220 works, so 190 is comfortably inside
- * a wide, forgiving window rather than a pixel-perfect ask.
+ * The route is hand-authored rather than driven by "walk toward the next door",
+ * and the two climbs are why: a climber has to press *into* the wall, which is
+ * often the opposite direction to the door it is heading for. A greedy bot walks
+ * to the door's column, stands in open air and reports the level unbeatable. A
+ * player knows to hug the rock first, so the route says so.
  */
-const AT_LEDGE_JUMP = (s: WorldState) => x(s) >= 190
-/** Near the pit edge in the spire (the pit starts at col 5, x=80). */
-const AT_PIT_EDGE = (s: WorldState) => x(s) >= 60
+
+/** At `x` or beyond. */
+const xAtLeast = (v: number) => (s: WorldState) => x(s) >= v
+/** Feet at or above `y` (smaller y is higher). */
+const yAtMost = (v: number) => (s: WorldState) => s.player.pos.y <= v
+
+/**
+ * Gallery climb point. Must be *before* the ledge's overhang, not at its face:
+ * the ledge is two tiles thick, so a player who drifts under it first hits its
+ * underside with their head and can never rise past it. Any x from 120 to 220
+ * works, so 190 sits in a wide window rather than being pixel-perfect.
+ */
+const GALLERY_JUMP_AT = 190
 
 const ROUTE: readonly Step[] = [
-  {
-    label: 'atrium: walk east to the door',
-    mask: RIGHT,
-    until: inRoom('gallery'),
-    maxTicks: 400,
-  },
+  { label: 'atrium: walk east to the door', mask: RIGHT, until: inRoom('gallery'), maxTicks: 400 },
   {
     label: 'gallery: collect the double jump, reach the climb point',
     mask: RIGHT,
-    until: AT_LEDGE_JUMP,
+    until: xAtLeast(GALLERY_JUMP_AT),
     maxTicks: 400,
   },
   { label: 'gallery: jump 1', mask: RIGHT_JUMP, ticks: 10 },
@@ -70,14 +75,37 @@ const ROUTE: readonly Step[] = [
   {
     label: 'gallery: walk the ledge to the east door',
     mask: RIGHT,
-    until: inRoom('spire'),
+    until: inRoom('shaft'),
     maxTicks: 400,
   },
-  { label: 'spire: walk to the pit edge', mask: RIGHT, until: AT_PIT_EDGE, maxTicks: 200 },
-  { label: 'spire: jump 1', mask: RIGHT_JUMP, ticks: 10 },
-  { label: 'spire: release', mask: RIGHT, ticks: 5 },
-  { label: 'spire: jump 2 and cross the pit', mask: RIGHT_JUMP, ticks: 40 },
-  { label: 'spire: walk to the goal', mask: RIGHT, until: (s) => s.reachedGoal, maxTicks: 400 },
+
+  // shaft: a descent. Hold east and let the shelves break the fall.
+  { label: 'shaft: drop and walk east to the exit', mask: RIGHT, until: inRoom('overlook'), maxTicks: 900 },
+
+  // overlook: pick up wallClimb on the floor and leave west.
+  { label: 'overlook: walk west to the door', mask: LEFT, until: inRoom('cistern'), maxTicks: 600 },
+
+  // cistern: walk to the climb column, then hug the wall and climb.
+  { label: 'cistern: walk to the climb column', mask: RIGHT, until: xAtLeast(84), maxTicks: 400 },
+  {
+    label: 'cistern: climb the wall',
+    mask: RIGHT_JUMP,
+    until: yAtMost(44),
+    maxTicks: 600,
+  },
+  { label: 'cistern: step left onto the ledge', mask: LEFT, until: inRoom('foundry'), maxTicks: 400 },
+
+  // foundry: a three-tile gap.
+  { label: 'foundry: walk to the gap edge', mask: RIGHT, until: xAtLeast(100), maxTicks: 300 },
+  { label: 'foundry: clear the gap', mask: RIGHT_JUMP, ticks: 26 },
+  { label: 'foundry: walk to the east door', mask: RIGHT, until: inRoom('ascent'), maxTicks: 400 },
+
+  // ascent: the long chimney.
+  { label: 'ascent: walk to the chimney wall', mask: RIGHT, until: xAtLeast(244), maxTicks: 600 },
+  { label: 'ascent: climb the chimney', mask: RIGHT_JUMP, until: yAtMost(52), maxTicks: 900 },
+  { label: 'ascent: step left and walk the ledge to the door', mask: LEFT, until: inRoom('summit'), maxTicks: 600 },
+
+  { label: 'summit: walk to the goal', mask: RIGHT, until: (s) => s.reachedGoal, maxTicks: 600 },
 ]
 
 function trace(s: WorldState): string {
@@ -105,11 +133,12 @@ function play(map = GAME_MAP, onTick?: (s: WorldState) => void): Playthrough {
   const note = (): void => {
     onTick?.(s)
     if (s.tick % 25 === 0) lines.push(trace(s))
-    if (s.roomId === 'gallery' && milestones.gallery === undefined) milestones.gallery = s.tick
-    if (s.abilities.includes('doubleJump') && milestones.doubleJump === undefined) {
-      milestones.doubleJump = s.tick
+    if (milestones[s.roomId] === undefined) milestones[s.roomId] = s.tick
+    for (const ability of ['doubleJump', 'wallClimb']) {
+      if (s.abilities.includes(ability) && milestones[ability] === undefined) {
+        milestones[ability] = s.tick
+      }
     }
-    if (s.roomId === 'spire' && milestones.spire === undefined) milestones.spire = s.tick
     if (s.reachedGoal && milestones.goal === undefined) milestones.goal = s.tick
   }
 
@@ -154,18 +183,24 @@ describe('route: the shipped level is completable with real inputs', () => {
   })
 
   it('passes through every room in order', () => {
-    expect(milestones.gallery).toBeDefined()
-    expect(milestones.doubleJump).toBeDefined()
-    expect(milestones.spire).toBeDefined()
+    const order = ['atrium', 'gallery', 'shaft', 'overlook', 'cistern', 'foundry', 'ascent', 'summit']
+    for (const id of order) expect(milestones[id], `never entered "${id}"`).toBeDefined()
+    // Ticks must increase along the route: a room reached "before" an earlier one
+    // would mean the route backtracked or the milestone bookkeeping is wrong.
+    let last = -1
+    for (const id of order) {
+      expect(milestones[id]!, `"${id}" out of order`).toBeGreaterThan(last)
+      last = milestones[id]!
+    }
     expect(milestones.goal).toBeDefined()
-    expect(milestones.doubleJump!).toBeGreaterThan(milestones.gallery!)
-    expect(milestones.spire!).toBeGreaterThan(milestones.doubleJump!)
-    expect(milestones.goal!).toBeGreaterThan(milestones.spire!)
   })
 
-  it('collects the double jump before it is needed', () => {
-    expect(final.abilities).toEqual(['doubleJump'])
-    expect(final.collected).toEqual(['gallery-double-jump'])
+  it('collects both abilities, each before the gate that needs it', () => {
+    expect(final.abilities).toEqual(['doubleJump', 'wallClimb'])
+    expect(final.collected).toEqual(['gallery-double-jump', 'overlook-wall-climb'])
+    // doubleJump before the shaft staircase; wallClimb before the cistern climb.
+    expect(milestones.doubleJump!).toBeLessThan(milestones.shaft!)
+    expect(milestones.wallClimb!).toBeLessThan(milestones.cistern!)
   })
 
   it('stays inside the level the whole way', () => {
@@ -189,10 +224,10 @@ describe('route: the shipped level is completable with real inputs', () => {
   })
 })
 
-describe('route: the gate is real', () => {
-  it('cannot reach the spire without the double jump', () => {
-    // Same policy, but the item is removed from the map, so the gated door
-    // never opens and the run must stall in the gallery.
+describe('route: the gates are real', () => {
+  it('cannot leave the gallery without the double jump', () => {
+    // Same inputs, item removed: the ledge is four tiles up, beyond any single
+    // jump, so the route stalls exactly where it should.
     const withoutItem = {
       ...GAME_MAP,
       rooms: {
@@ -203,7 +238,24 @@ describe('route: the gate is real', () => {
     const result = play(withoutItem)
     expect(result.final.roomId).toBe('gallery')
     expect(result.final.reachedGoal).toBe(false)
-    expect(result.milestones.spire).toBeUndefined()
+    expect(result.milestones.shaft).toBeUndefined()
+  })
+
+  it('cannot pass the cistern without the wall climb', () => {
+    // With the double jump but no wallClimb, every room up to the cistern is
+    // reachable and the cistern ledge is not: the route must stall there.
+    const withoutClimb = {
+      ...GAME_MAP,
+      rooms: {
+        ...GAME_MAP.rooms,
+        overlook: { ...GAME_MAP.rooms.overlook!, items: [] },
+      },
+    }
+    const result = play(withoutClimb)
+    expect(result.final.roomId).toBe('cistern')
+    expect(result.final.reachedGoal).toBe(false)
+    expect(result.final.abilities).toEqual(['doubleJump'])
+    expect(result.milestones.foundry).toBeUndefined()
   })
 
   it('the transition lock stops a door from firing twice in a row', () => {

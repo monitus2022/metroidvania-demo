@@ -68,6 +68,25 @@ export function gapRoom(gap: number) {
   })
 }
 
+/**
+ * A one-tile-wide shaft flanked by rock, player standing at the bottom.
+ *
+ * The column above the player is empty and has no floor, so it is a dead end to
+ * anyone who cannot grip a wall — which is exactly what the wallClimb gate is
+ * supposed to make passable.
+ */
+export function shaftRoom(height = 14) {
+  const wall = '###.####'
+  return singleRoomMap(
+    [...Array(height - 3).fill(wall), '###P####', '########', '########'],
+    { id: 'shaft' },
+  )
+}
+
+/** Column of the shaft floor in `shaftRoom`, and the row the player starts on. */
+export const SHAFT_COL = 3
+export const SHAFT_START_ROW = 11
+
 /** Column at which the GAP4 pit begins, in pixels. */
 export const GAP4_START_X = 12 * 16
 /** Column at which solid ground resumes, in pixels. */
