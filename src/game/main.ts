@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
-import { WORLD_H, WORLD_W } from '../sim/step'
+import { DEMO_LEVEL } from '../sim/levels'
+import { gridHeightPx, gridWidthPx } from '../sim/tiles'
 import { PlayScene } from './scene'
 
 // The canvas is created at *native world resolution* and upscaled by Scale.FIT.
@@ -8,8 +9,8 @@ import { PlayScene } from './scene'
 new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
-  width: WORLD_W,
-  height: WORLD_H,
+  width: gridWidthPx(DEMO_LEVEL),
+  height: gridHeightPx(DEMO_LEVEL),
   backgroundColor: '#0b0f14',
   pixelArt: true,
   scale: {
