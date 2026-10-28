@@ -118,13 +118,25 @@ export const ATTACK_COOLDOWN_TICKS = 24
 /** How far in front of the player the swing reaches. */
 export const ATTACK_REACH = 16
 
-export const ENEMY_HP = 2
+/**
+ * One hit. Deliberate: two made clearing an enemy a chore, and it interacted
+ * badly with the immunity below — see the note there.
+ */
+export const ENEMY_HP = 1
 /** Patrol speed. Slower than the player, so walking away always works. */
 export const ENEMY_SPEED = 40 // px/s
 /** Ticks before a killed enemy comes back, so a cleared room does not stay empty. */
 export const ENEMY_RESPAWN_TICKS = 240 // 4s
-/** Ticks an enemy cannot be damaged again, so one swing is one hit. */
-export const ENEMY_HIT_COOLDOWN = 30
+/**
+ * Ticks an enemy cannot be damaged again, so one swing is one hit.
+ *
+ * Must not exceed ATTACK_COOLDOWN_TICKS. It was 30 against a 24-tick cooldown,
+ * which meant a player mashing attack had every second swing silently absorbed —
+ * no hit, no feedback, no way to tell why the enemy was not dying. With one hit
+ * point that cannot happen, but the two numbers are pinned together by a test so
+ * raising enemy health later fails loudly instead of quietly reintroducing it.
+ */
+export const ENEMY_HIT_COOLDOWN = ATTACK_TICKS
 
 /*
  * Enemy attacks are telegraphed. The first version damaged the player on contact
