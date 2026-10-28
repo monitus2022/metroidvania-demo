@@ -124,9 +124,12 @@ describe('sim: tile collision', () => {
     }
   })
 
-  it('the player body fits inside a tile', () => {
+  it('the player collider is sized to the art, not to the tile grid', () => {
+    // Narrower than a tile so walking through 1-tile gaps is forgiving, but
+    // taller than one tile because the character sprite is ~27px tall.
     expect(PLAYER_W).toBeLessThan(TILE)
-    expect(PLAYER_H).toBe(TILE)
+    expect(PLAYER_H).toBeGreaterThan(TILE)
+    expect(PLAYER_H).toBeLessThanOrEqual(2 * TILE)
   })
 })
 

@@ -5,3 +5,9 @@ test-results/
 playwright-report/
 blob-report/
 .DS_Store
+
+# Downloaded asset packs: never commit third-party art here. Only the specific
+# files the game uses are tracked, under src/assets/ (see the README beside them).
+Characters PackV2/
+TileSet wasteland/
+TileSet Wasteland/
