@@ -4,6 +4,7 @@ import enemyHit from '../assets/enemy/WarriorManHit.png'
 import enemyIdle from '../assets/enemy/WarriorManIdle.png'
 import enemyWalk from '../assets/enemy/WarriorManWalk.png'
 import womanAttack from '../assets/woman/WarriorWomanAttack1.png'
+import womanHit from '../assets/woman/WarriorWomanHit.png'
 import womanIdle from '../assets/woman/WarriorWomanIdle.png'
 import womanJump from '../assets/woman/WarriorWomanJump.png'
 import womanRun from '../assets/woman/WarriorWomanRun.png'
@@ -57,6 +58,7 @@ export const WOMAN: SpriteSet = {
     run: { url: womanRun, frameWidth: 80, frameHeight: 64 },
     jump: { url: womanJump, frameWidth: 80, frameHeight: 64 },
     attack: { url: womanAttack, frameWidth: 80, frameHeight: 64 },
+    hit: { url: womanHit, frameWidth: 80, frameHeight: 64 },
   },
   footOrigin: 47 / 64,
   animations: {
@@ -69,6 +71,8 @@ export const WOMAN: SpriteSet = {
     // One swing. Plays once and holds, and syncView restarts it whenever the sim
     // says a new swing began.
     attack: { sheet: 'attack', start: 0, end: 6, frameRate: 18, repeat: 0 },
+    // Two frames of recoil. Plays once and holds while the hurt timer runs.
+    hit: { sheet: 'hit', start: 0, end: 1, frameRate: 9, repeat: 0 },
   },
   xNudge: 0,
 }

@@ -52,6 +52,16 @@ export interface EnemyState {
   respawnTimer: number
   /** Ticks before it may be damaged again, so one swing is one hit. */
   hitCooldown: number
+  /**
+   * Attack countdown. 0 means not attacking; otherwise it counts down from
+   * `attackTotal`, and the phase is the elapsed part of that span — see
+   * `enemyAttackPhase`.
+   */
+  attackTimer: number
+  /** Length of the attack currently in progress. 0 when idle. */
+  attackTotal: number
+  /** Ticks before it may commit to another attack. */
+  attackCooldown: number
 }
 
 export interface WorldState {
@@ -77,6 +87,8 @@ export interface WorldState {
   hp: number
   /** Ticks of invulnerability remaining after taking a hit. */
   invulnTimer: number
+  /** Ticks the hurt pose shows for. Purely for the renderer. */
+  hurtTimer: number
   /** Ticks remaining in the current swing. 0 means not attacking. */
   attackTimer: number
   /** Ticks until another attack is allowed. */

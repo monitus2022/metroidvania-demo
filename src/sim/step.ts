@@ -7,10 +7,18 @@ import {
   COYOTE_TIME,
   DOOR_ARRIVAL_INSET,
   DOUBLE_JUMP_VELOCITY,
+  ENEMY_ACTIVE_TICKS,
+  ENEMY_ATTACK_COOLDOWN,
+  ENEMY_ATTACK_HEIGHT,
+  ENEMY_ATTACK_RANGE,
+  ENEMY_ATTACK_REACH,
   ENEMY_HIT_COOLDOWN,
   ENEMY_HP,
+  ENEMY_LUNGE_SPEED,
+  ENEMY_RECOVER_TICKS,
   ENEMY_RESPAWN_TICKS,
   ENEMY_SPEED,
+  ENEMY_WINDUP_TICKS,
   FIXED_DT,
   GRAVITY,
   GROUND_FRICTION,
@@ -20,7 +28,10 @@ import {
   MAX_AIR_JUMPS,
   MAX_FALL,
   PLAYER_H,
+  PLAYER_HURT_TICKS,
   PLAYER_INVULN_TICKS,
+  PLAYER_KNOCKBACK_X,
+  PLAYER_KNOCKBACK_Y,
   PLAYER_MAX_HP,
   PLAYER_W,
   RUN_ACCEL,
@@ -30,7 +41,7 @@ import {
   WALL_CLIMB_SPEED,
   WALL_SLIDE_SPEED,
 } from './constants'
-import { bodiesOverlap, bodyBox, boxesOverlap, moveX, moveY, touchingWall } from './collision'
+import { bodyBox, boxesOverlap, moveX, moveY, touchingWall } from './collision'
 import type { DoorDef, GameMap } from './content'
 import { BTN, axisX, held, type InputMask } from './input'
 import type { EnemyState, PlayerState, WorldState } from './state'
@@ -99,6 +110,9 @@ export function freshEnemies(map: GameMap): EnemyState[] {
         alive: true,
         respawnTimer: 0,
         hitCooldown: 0,
+        attackTimer: 0,
+        attackTotal: 0,
+        attackCooldown: 0,
       })
     }
   }
@@ -120,6 +134,7 @@ export function createInitialState(map: GameMap, seed = 1234): WorldState {
     enemies: freshEnemies(map),
     hp: PLAYER_MAX_HP,
     invulnTimer: 0,
+    hurtTimer: 0,
     attackTimer: 0,
     attackCooldown: 0,
   }
@@ -133,6 +148,7 @@ export function respawn(state: WorldState): WorldState {
     transitionLock: TRANSITION_LOCK_TICKS,
     hp: PLAYER_MAX_HP,
     invulnTimer: PLAYER_INVULN_TICKS,
+    hurtTimer: 0,
     attackTimer: 0,
     attackCooldown: 0,
     // Death resets the world's enemies, not just the current room's. Cleared
@@ -159,8 +175,40 @@ function swingBox(p: PlayerState): { x: number; y: number; w: number; h: number 
  * never leave the platform it was placed on and end up somewhere unreachable or
  * out of the room.
  */
-function stepEnemy(e: EnemyState, grid: TileGrid, dt: number): void {
+export type AttackPhase = 'idle' | 'windup' | 'active' | 'recover'
+
+/**
+ * Which part of its attack an enemy is in.
+ *
+ * Derived from the countdown rather than stored as a string: one number in the
+ * state hash instead of two, and no way for the phase and the timer to disagree.
+ */
+export function enemyAttackPhase(e: EnemyState): AttackPhase {
+  if (e.attackTimer <= 0) return 'idle'
+  const elapsed = e.attackTotal - e.attackTimer
+  if (elapsed < ENEMY_WINDUP_TICKS) return 'windup'
+  if (elapsed < ENEMY_WINDUP_TICKS + ENEMY_ACTIVE_TICKS) return 'active'
+  return 'recover'
+}
+
+/**
+ * The box an enemy's swing covers: its own body, plus its reach in front.
+ *
+ * Covering only the space in front is exploitable — standing *inside* the enemy
+ * puts the player behind the hitbox, so hugging it becomes a free win and the
+ * lunge carries the swing straight past them.
+ */
+export function enemySwingBox(e: EnemyState): { x: number; y: number; w: number; h: number } {
+  const body = bodyBox(e.pos)
+  const front = e.dir === 1 ? body.x + body.w + ENEMY_ATTACK_REACH : body.x - ENEMY_ATTACK_REACH
+  const left = Math.min(body.x, front)
+  const right = Math.max(body.x + body.w, front)
+  return { x: left, y: body.y, w: right - left, h: body.h }
+}
+
+function stepEnemy(e: EnemyState, grid: TileGrid, dt: number, player: PlayerState): void {
   if (e.hitCooldown > 0) e.hitCooldown -= 1
+  if (e.attackCooldown > 0) e.attackCooldown -= 1
 
   if (!e.alive) {
     e.respawnTimer -= 1
@@ -170,7 +218,50 @@ function stepEnemy(e: EnemyState, grid: TileGrid, dt: number): void {
       e.pos = { ...e.spawn }
       e.vel = { x: 0, y: 0 }
       e.respawnTimer = 0
+      e.attackTimer = 0
+      e.attackTotal = 0
     }
+    return
+  }
+
+  // Mid-attack: rooted in place. The telegraph is only readable if the enemy
+  // stops, and stopping is also what makes the swing dodgeable — the player has
+  // the whole wind-up to walk out of range.
+  if (e.attackTimer > 0) {
+    e.attackTimer -= 1
+    if (e.attackTimer === 0) {
+      e.attackTotal = 0
+      e.attackCooldown = ENEMY_ATTACK_COOLDOWN
+    }
+    // Committed to the direction it chose when it started. It does NOT re-aim:
+    // tracking during the wind-up plus a hitbox that covers its own body makes
+    // the swing almost impossible to dodge by crossing behind it, and "walk
+    // through it" is the intuitive answer to a telegraphed lunge.
+    // Lunges only while the hitbox is live; rooted the rest of the time, so the
+    // wind-up reads as a wind-up and the strike reads as a strike.
+    e.vel.x = enemyAttackPhase(e) === 'active' ? e.dir * ENEMY_LUNGE_SPEED : 0
+    e.vel.y = Math.min(MAX_FALL, e.vel.y + GRAVITY * dt)
+    moveX(e, grid, e.vel.x * dt)
+    moveY(e, grid, e.vel.y * dt)
+    return
+  }
+
+  // Decide whether to commit *before* walking, so the enemy stops where it
+  // stands. Deciding after the step leaves it drifting a fraction of a pixel
+  // into the attack, which is enough to aim it the wrong way.
+  const toPlayerX = player.pos.x - e.pos.x
+  const toPlayerY = Math.abs(player.pos.y - e.pos.y)
+  if (
+    e.attackCooldown === 0 &&
+    toPlayerY <= ENEMY_ATTACK_HEIGHT &&
+    Math.abs(toPlayerX) <= ENEMY_ATTACK_RANGE
+  ) {
+    e.dir = toPlayerX >= 0 ? 1 : -1
+    e.attackTotal = ENEMY_WINDUP_TICKS + ENEMY_ACTIVE_TICKS + ENEMY_RECOVER_TICKS
+    e.attackTimer = e.attackTotal
+    e.vel.x = 0
+    e.vel.y = Math.min(MAX_FALL, e.vel.y + GRAVITY * dt)
+    moveY(e, grid, e.vel.y * dt)
     return
   }
 
@@ -298,7 +389,7 @@ export function step(state: WorldState, input: InputMask, dt: number = FIXED_DT)
   const grid = gridOf(next)
   for (const enemy of next.enemies) {
     if (enemy.roomId === next.roomId) {
-      stepEnemy(enemy, grid, dt)
+      stepEnemy(enemy, grid, dt, pl)
     } else if (!enemy.alive) {
       // Out of the room: frozen in place, but the respawn clock keeps running, so
       // a room you cleared is repopulated whether or not you are standing in it.
@@ -333,14 +424,42 @@ export function step(state: WorldState, input: InputMask, dt: number = FIXED_DT)
     }
   }
 
-  // --- contact damage ---
+  // --- enemy attacks ---
+  // Only the active phase can hurt. Touching an enemy is free: contact damage
+  // with no wind-up is a cheap hit, and the whole point of the three phases is
+  // that the player can see it coming and step out of range.
   next.invulnTimer = Math.max(0, next.invulnTimer - 1)
+  next.hurtTimer = Math.max(0, next.hurtTimer - 1)
   if (next.invulnTimer === 0) {
+    const playerBox = bodyBox(pl.pos)
     for (const enemy of next.enemies) {
       if (!enemy.alive || enemy.roomId !== next.roomId) continue
-      if (!bodiesOverlap(pl, enemy)) continue
+      if (enemyAttackPhase(enemy) !== 'active') continue
+      const swing = enemySwingBox(enemy)
+      if (
+        !boxesOverlap(
+          swing.x,
+          swing.y,
+          swing.w,
+          swing.h,
+          playerBox.x,
+          playerBox.y,
+          playerBox.w,
+          playerBox.h,
+        )
+      ) {
+        continue
+      }
+
       next.hp -= 1
       next.invulnTimer = PLAYER_INVULN_TICKS
+      next.hurtTimer = PLAYER_HURT_TICKS
+      // Knock back, away from whatever hit us. Without this the player stays
+      // inside the enemy and eats the next swing the moment invulnerability
+      // lapses, which reads as damage out of nowhere.
+      const away = Math.sign(pl.pos.x - enemy.pos.x) || 1
+      pl.vel.x = away * PLAYER_KNOCKBACK_X
+      pl.vel.y = PLAYER_KNOCKBACK_Y
       break
     }
   }
