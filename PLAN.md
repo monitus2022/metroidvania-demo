@@ -192,10 +192,19 @@ Static deploy, live link, saves.
       bounce (the `DOOR_ARRIVAL_INSET` fix holds in production). Cache headers correct:
       `index.html` revalidates, the hashed asset is `immutable, max-age=31536000`.
       At that verification the deployed bundle matched `dev` HEAD (`9afcaf5`).
-- [ ] **Production is currently behind `dev`.** `dev` carries the whole of M4 — art,
-      terrain, the 8-room map, enemies — and the human merges `dev` → `main` by hand, so
-      the live site still runs the M3 build. Re-verify the deployed hash after the next
-      merge; the check above is a point-in-time record, not a standing guarantee.
+- [x] **Production carries M4** as of merge `e526ff9` (`dev` → `main`). Verified by
+      headless Chromium against the live URL: boots with no console errors, sim advancing,
+      real key events move the player (spawn `x=40` → `x=270.8`), 3 enemies in the state,
+      and the M4 art is what renders — painted parallax layers, textured sand/dirt terrain
+      rather than flat blocks, the character sprite, the chest prop, the HUD. Deployed
+      bundle hash matches a local build of `main`.
+- [ ] **The NightBorne pack is still reachable in `main`'s history** (commits `f36660d`
+      and `1dfa836`). `main`'s tip no longer tracks it, but the blobs are retrievable, so
+      the licence's no-redistribution clause is still not fully satisfied for the public
+      repo. Next step: rewrite `main`'s history to drop those paths, or make the repo
+      private, which removes the problem outright.
+      Note for that rewrite: GitHub keeps old commits reachable through PR refs
+      (`refs/pull/5/head`), so a force-push alone may not make the files unrecoverable.
 - Deploy config is ready and verified in `DEPLOY.md`: Cloudflare Pages, build `npm run build`,
   output `dist`, `NODE_VERSION=24`. The artifact was verified booting from a deep subpath.
   Remaining work is the human authorising Cloudflare, then verifying the live URL.
