@@ -22,7 +22,19 @@ export const FIXED_DT = 1 / TICK_HZ
 export const TILE = 16
 
 export const PLAYER_W = 12
-export const PLAYER_H = 16
+
+/**
+ * Sized to the art, not to the tile grid.
+ *
+ * The character sprite is ~27px tall (measured from the source sheets), so a
+ * 16px collider would let the head pass through ceilings the player can plainly
+ * see. 24px is 1.5 tiles: the body collides, and the remaining ~3px is hair and
+ * sword overhang, which is normal and reads correctly.
+ *
+ * Changing this re-derives the solver's movement envelope and the gap windows —
+ * run `tests/unit/anchor.test.ts` afterwards and trust its numbers.
+ */
+export const PLAYER_H = 24
 
 /** Longest distance the collision resolver will move in one sub-step. */
 export const MAX_SUBSTEP = TILE / 2

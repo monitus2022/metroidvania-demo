@@ -1,11 +1,27 @@
 import Phaser from 'phaser'
-import { PLAYER_H, PLAYER_W, TILE } from '../sim/constants'
+import { FIXED_DT, PLAYER_H, PLAYER_W, TILE } from '../sim/constants'
+import { BTN, type InputMask } from '../sim/input'
 import { GAME_MAP } from '../sim/levels'
 import { createInitialState, gridOf, hasAbility, isDoorOpen, respawn, step } from '../sim/step'
 import type { WorldState } from '../sim/state'
 import { isSolid } from '../sim/tiles'
-import { BTN, type InputMask } from '../sim/input'
-import { FIXED_DT } from '../sim/constants'
+import { CURRENT } from './sprites'
+
+/** Diagnostic view of the sprite, so anchoring can be asserted exactly. */
+export interface SpriteInfo {
+  x: number
+  y: number
+  displayWidth: number
+  displayHeight: number
+  originX: number
+  originY: number
+  frameWidth: number
+  frameHeight: number
+  flipX: boolean
+  anim: string | null
+  posX: number
+  posY: number
+}
 
 declare global {
   interface Window {
@@ -15,25 +31,34 @@ declare global {
       getInputMask: () => InputMask
       tickCount: () => number
       roomId: () => string
+      spriteInfo: () => SpriteInfo
     }
   }
 }
 
+/** `?boxes` draws the collision box over the sprite, for checking alignment. */
+const DEBUG_BOXES = new URLSearchParams(window.location.search).has('boxes')
+
+/** Above this horizontal speed the character reads as running, not standing. */
+const RUN_ANIM_THRESHOLD = 12
+
 /**
  * The render + input layer. It owns no game rules: it samples the keyboard into
  * an input bitmask, advances the pure sim on a fixed-step accumulator, and draws
- * the result. Sprites are deliberately rectangles until the harness is green.
+ * the result from sim state alone.
  */
 export class PlayScene extends Phaser.Scene {
   private state: WorldState = createInitialState(GAME_MAP)
   private accumulator = 0
   private lastMask: InputMask = 0
   private drawnKey = ''
+  private prevAirJumps = 0
 
+  private hud!: HTMLDivElement
   private terrain!: Phaser.GameObjects.Graphics
   private props!: Phaser.GameObjects.Graphics
-  private playerRect!: Phaser.GameObjects.Rectangle
-  private hudText!: Phaser.GameObjects.Text
+  private box!: Phaser.GameObjects.Graphics
+  private player!: Phaser.GameObjects.Sprite
   private keys!: {
     left: Phaser.Input.Keyboard.Key
     right: Phaser.Input.Keyboard.Key
@@ -47,23 +72,39 @@ export class PlayScene extends Phaser.Scene {
     super('play')
   }
 
+  preload(): void {
+    for (const [name, sheet] of Object.entries(CURRENT.sheets)) {
+      this.load.spritesheet(`${CURRENT.id}-${name}`, sheet.url, {
+        frameWidth: sheet.frameWidth,
+        frameHeight: sheet.frameHeight,
+      })
+    }
+  }
+
   create(): void {
+    for (const [name, anim] of Object.entries(CURRENT.animations)) {
+      this.anims.create({
+        key: `${CURRENT.id}-${name}`,
+        frames: this.anims.generateFrameNumbers(`${CURRENT.id}-${anim.sheet}`, {
+          start: anim.start,
+          end: anim.end,
+        }),
+        frameRate: anim.frameRate,
+        repeat: anim.repeat,
+      })
+    }
+
     this.terrain = this.add.graphics()
     this.props = this.add.graphics()
-    this.playerRect = this.add.rectangle(0, 0, PLAYER_W, PLAYER_H, 0x6ee7ff)
+    this.box = this.add.graphics()
 
-    this.hudText = this.add
-      .text(4, 3, '', { fontFamily: 'monospace', fontSize: '8px', color: '#8aa0b4' })
-      .setScrollFactor(0)
-      .setDepth(10)
-    this.add
-      .text(4, 12, 'arrows move   space jump (x2)   r respawn', {
-        fontFamily: 'monospace',
-        fontSize: '7px',
-        color: '#4d6478',
-      })
-      .setScrollFactor(0)
-      .setDepth(10)
+    this.player = this.add.sprite(0, 0, `${CURRENT.id}-idle`)
+    // Origin at the feet, measured from the source sheets. The art carries 16px
+    // of transparent padding below the feet, so origin y = 1 would float the
+    // character a full tile above the ground.
+    this.player.setOrigin(0.5, CURRENT.footOrigin)
+
+    this.createHud()
 
     const keyboard = this.input.keyboard
     if (!keyboard) throw new Error('keyboard input unavailable')
@@ -87,7 +128,47 @@ export class PlayScene extends Phaser.Scene {
       getInputMask: () => this.lastMask,
       tickCount: () => this.state.tick,
       roomId: () => this.state.roomId,
+      // Exposed so the sprite anchoring can be asserted exactly rather than
+      // inferred from a screenshot.
+      spriteInfo: () => ({
+        x: this.player.x,
+        y: this.player.y,
+        displayWidth: this.player.displayWidth,
+        displayHeight: this.player.displayHeight,
+        originX: this.player.originX,
+        originY: this.player.originY,
+        frameWidth: this.player.width,
+        frameHeight: this.player.height,
+        flipX: this.player.flipX,
+        anim: this.player.anims.currentAnim?.key ?? null,
+        posX: this.state.player.pos.x,
+        posY: this.state.player.pos.y,
+      }),
     }
+  }
+
+  /**
+   * HUD as a DOM overlay rather than canvas text.
+   *
+   * The canvas is 240x160 and `Scale.FIT` blows it up ~5x on a desktop window,
+   * so 8px canvas text gets upscaled like a sprite and reads as mush. DOM text
+   * stays crisp at any scale.
+   */
+  private createHud(): void {
+    this.hud = document.createElement('div')
+    this.hud.id = 'hud'
+    this.hud.style.cssText = [
+      'position:fixed',
+      'left:10px',
+      'top:10px',
+      'font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace',
+      'color:#93a9bd',
+      'text-shadow:0 1px 2px #000',
+      'pointer-events:none',
+      'white-space:pre',
+      'user-select:none',
+    ].join(';')
+    document.body.appendChild(this.hud)
   }
 
   private sampleInput(): InputMask {
@@ -146,9 +227,7 @@ export class PlayScene extends Phaser.Scene {
       this.props.fillRect(door.col * TILE + 5, door.row * TILE + 2, TILE - 10, TILE - 2)
     }
 
-    const roomW = grid.w * TILE
-    const roomH = grid.h * TILE
-    this.cameras.main.setBounds(0, 0, roomW, roomH)
+    this.cameras.main.setBounds(0, 0, grid.w * TILE, grid.h * TILE)
     this.drawnKey = this.viewKey()
   }
 
@@ -161,18 +240,42 @@ export class PlayScene extends Phaser.Scene {
     if (this.drawnKey !== this.viewKey()) this.drawRoom()
 
     const p = this.state.player
-    // pos is the feet; the rectangle origin is its centre.
-    this.playerRect.setPosition(p.pos.x, p.pos.y - PLAYER_H / 2)
-    this.playerRect.setFillStyle(hasAbility(this.state, 'doubleJump') ? 0x9ef7ff : 0x6ee7ff)
+    const wanted = !p.onGround ? 'air' : Math.abs(p.vel.x) > RUN_ANIM_THRESHOLD ? 'run' : 'idle'
+    const animKey = `${CURRENT.id}-${wanted}`
+    const current = this.player.anims.currentAnim?.key
+    const doubleJumped = p.airJumpsUsed > this.prevAirJumps
+    this.prevAirJumps = p.airJumpsUsed
+
+    if (wanted === 'air') {
+      // Restart the air strip on the mid-air jump; otherwise let it play out and
+      // hold its last frame, which is the falling pose.
+      if (doubleJumped || current !== animKey || !this.player.anims.isPlaying) {
+        this.player.anims.play(animKey, true)
+      }
+    } else if (current !== animKey) {
+      this.player.anims.play(animKey, true)
+    }
+
+    const nudge = p.facing === 1 ? CURRENT.xNudge : -CURRENT.xNudge
+    this.player.setPosition(p.pos.x + nudge, p.pos.y)
+    this.player.setFlipX(p.facing === -1)
+
+    if (DEBUG_BOXES) {
+      this.box.clear()
+      // Pure magenta: no colour in the character art comes close, so the box
+      // can be measured out of a screenshot without ambiguity.
+      this.box.lineStyle(1, 0xff00ff, 0.9)
+      this.box.strokeRect(p.pos.x - PLAYER_W / 2, p.pos.y - PLAYER_H, PLAYER_W, PLAYER_H)
+      this.box.lineStyle(1, 0xffffff, 0.3)
+      this.box.lineBetween(p.pos.x - 2, p.pos.y, p.pos.x + 2, p.pos.y)
+    }
 
     this.cameras.main.centerOn(p.pos.x, p.pos.y - PLAYER_H / 2)
 
     const ability = hasAbility(this.state, 'doubleJump') ? 'double jump' : 'no ability'
-    this.hudText.setText(
-      `${this.state.roomId}  ${ability}  ` +
-        `x ${p.pos.x.toFixed(0)} y ${p.pos.y.toFixed(0)}` +
-        (this.state.reachedGoal ? '  GOAL' : ''),
-    )
+    this.hud.textContent =
+      `${this.state.roomId}   ${ability}${this.state.reachedGoal ? '   — GOAL' : ''}\n` +
+      `← → move    space jump    r respawn`
   }
 
   update(_time: number, delta: number): void {
