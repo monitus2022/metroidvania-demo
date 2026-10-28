@@ -8,6 +8,13 @@ blob-report/
 
 # Downloaded asset packs: never commit third-party art here. Only the specific
 # files the game uses are tracked, under src/assets/ (see the README beside them).
+#
+# This list is a convenience, not the safety net — a pack folder with a new name
+# sails straight past it, which is how NightBorne ended up committed. The actual
+# guard is tests/unit/tracked-files.test.ts, which fails the build if anything
+# outside the expected directories is tracked. Add new packs here anyway, so
+# `git status` stays quiet.
 Characters PackV2/
 TileSet wasteland/
 TileSet Wasteland/
+NightBorne/

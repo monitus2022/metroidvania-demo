@@ -98,12 +98,88 @@ exactly on the reach limit gives a window of one position and plays as pixel-per
 though it looks fine.
 
 ### M4 — Scale
-8–10 rooms, enemies, a boss.
-- [ ] Solver green, fuzzer green on all rooms
-- [ ] Every door has a return door; no room is a dead end by accident
-- [ ] Every gap and ledge clears the fairness floor above (measured, not eyeballed)
-- [ ] Simulated completion time ~5 minutes — currently 5.6 seconds, so this is the real work
-- **Evidence:** solver + fuzz output, route timing, per-gap windows
+8–10 rooms, enemies, a boss. **In progress.**
+
+Built so far: 8 rooms (`atrium, gallery, shaft, overlook, cistern, foundry, ascent,
+summit`), 2,080 tiles, 14 doors, 2 abilities (double jump, wall climb), 2 pickups,
+3 enemies, 1 goal flag. Real art throughout: parallax backgrounds, tiled terrain, a
+recoloured enemy, damage feedback.
+
+- [x] Solver green on all rooms — beatable, `doubleJump` + `wallClimb` both required,
+      14/14 doors usable in both directions, no softlocks
+- [x] Fuzzer green — no tunnelling, no stuck-in-geometry over random input streams
+- [x] **A scripted playthrough with real inputs finishes the shipped level** —
+      spawn → goal in 1,104 ticks (18.4s), passing through every room in order
+- [x] Enemies: patrol, telegraphed attack, one-hit death, respawn — all deterministic
+- [ ] Every gap and ledge clears the fairness floor above, measured per gap.
+      Measured for the unit fixtures (the 4-tile pit window is 33–45 frames) and the
+      whole route is proven completable, but the window has **not** been measured
+      individually for the new rooms' gaps and ledges.
+- [ ] Simulated completion time ~5 minutes — **currently 18.4 seconds**, so this is
+      still the real work. Content volume, not tooling, is the bottleneck: the
+      pipeline would take 20 more rooms as happily as 8.
+- [ ] A boss. Nothing exists yet.
+
+**Evidence commands:** `npm run solve` · `npm test` · the route test prints its own
+timing and the critical-path health floor.
+
+**Measured, and worth a human decision — the route's health floor is 3/3.** Telegraphing
+the enemies' attacks made a player who keeps moving take no damage at all. Fair and
+readable, currently harmless. The dials are the lunge speed (120 px/s against your 130)
+and the commit range (34px); pushing the lunge above your run speed would make a
+committed attack genuinely threatening while keeping it dodgeable by crossing or jumping.
+
+### M4.1 — Known gaps, ranked by what they move
+
+1. **Content volume.** The only thing that turns this from a demo into a game. Target
+   20+ rooms and a boss. Everything below is polish by comparison.
+2. **Broader automated playtesting.** The route test is a *single scripted path*, and it
+   is currently carrying a lot of weight — it is what caught both cases of rooms that were
+   literally unplayable while every unit test passed. It says nothing about the 95% of
+   play it does not touch. Randomised/beam-searched playthroughs, run **with enemies
+   present**, would shrink that risk from one path to many.
+3. **The boss.** Art is available (see below); the work is a body-size refactor, a boss
+   entity with phases, an arena room, and a sealed-until-dead gate that goes in the
+   solver's `unverified` list.
+4. **Audio, title/win screens.** Cheapest possible jump in "this is a game".
+5. **Visual debt:** no slopes; vertical faces are flat-cut (the tileset has no cap
+   pieces); the sprite art is about twice the collider width, so characters overlap at
+   fighting distance and the enemy's wind-up pose is partly hidden — the charge indicator
+   is a workaround, not a fix.
+6. **"Beatable" is a narrower claim than it sounds.** The solver verifies *movement*
+   reachability. Since enemies can kill the player, rooms containing them are reported in
+   `unverified` (shaft, foundry) rather than being verified passable.
+
+### M4.2 — Boss candidate: NightBorne
+
+`NightBorne/NightBorne.png`, CreativeKind's *NightBorne Warrior* (free). Verified against
+the author's published frame counts, so the layout is known rather than guessed:
+
+| Row | Animation | Frames | Published |
+|---|---|---|---|
+| 0 | idle | 9 | 9 ✅ |
+| 1 | run | 6 | 6 ✅ |
+| 2 | attack | 12 | 12 ✅ |
+| 3 | hurt | 5 | 5 ✅ |
+| 4 | death | 23 | 23 ✅ |
+
+Sheet is 23×5 cells of **80×80**. Licence: use in commercial or non-commercial projects
+and modification both allowed, **distribution or resale prohibited** — same clause as the
+other packs, so the same rule applies: gitignored, and only the sheets actually loaded get
+vendored under `src/assets/`.
+
+Two findings that shape how it should be used:
+
+- **It is the same scale as the player, not a hulk.** Ink height is 25–32px against the
+  player's ~27px, and the pack is literally named "NightBorne *Warrior*". Used at 1:1 it
+  reads as a rival duelist, not a boss. Integer 2× scaling is the natural fix — 80×80
+  cells become 160×160, art ~60px tall (~2.2× the player), and 2× keeps pixel art crisp.
+- **Purple/white against a warm brown wasteland is a high-contrast read**, which is what a
+  boss needs. The risk is stylistic, not legibility: it is a different artist's dark-fantasy
+  palette, and it may read as arriving from another game.
+- It needs its own **body size**, which is currently a module constant (`PLAYER_W/H`), not
+  a property of the `Body` interface. That refactor is the first real task, and it touches
+  collision, the solver's model and every measured constant.
 
 ### M5 — Ship
 Static deploy, live link, saves.
@@ -115,7 +191,11 @@ Static deploy, live link, saves.
       the player, atrium → gallery → back to atrium, standing still on arrival did not
       bounce (the `DOOR_ARRIVAL_INSET` fix holds in production). Cache headers correct:
       `index.html` revalidates, the hashed asset is `immutable, max-age=31536000`.
-      Deployed bundle hash matches `dev` HEAD (`9afcaf5`), so the live build is current.
+      At that verification the deployed bundle matched `dev` HEAD (`9afcaf5`).
+- [ ] **Production is currently behind `dev`.** `dev` carries the whole of M4 — art,
+      terrain, the 8-room map, enemies — and the human merges `dev` → `main` by hand, so
+      the live site still runs the M3 build. Re-verify the deployed hash after the next
+      merge; the check above is a point-in-time record, not a standing guarantee.
 - Deploy config is ready and verified in `DEPLOY.md`: Cloudflare Pages, build `npm run build`,
   output `dist`, `NODE_VERSION=24`. The artifact was verified booting from a deep subpath.
   Remaining work is the human authorising Cloudflare, then verifying the live URL.
