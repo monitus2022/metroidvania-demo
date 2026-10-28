@@ -6,21 +6,26 @@ export interface Vec2 {
 }
 
 /**
- * Anything the collision resolver can move: the player and every enemy.
+ * Anything the collision resolver can move: the player, every enemy, and the boss.
  *
- * Bodies all share the player's dimensions (see PLAYER_W/PLAYER_H) because the
- * enemy art is the same rig. If an enemy ever needs a different body, the size
- * has to move onto this interface rather than staying a module constant.
+ * Size lives on the body rather than in a module constant because it is no longer
+ * uniform. It used to be — every body was secretly `PLAYER_W x PLAYER_H`, which
+ * was invisible while the only enemy was a recoloured player rig. A boss that is
+ * visibly twice the player's size needs a collider to match, or the fight is
+ * decided by a box the player cannot see: a player-sized collider slips under a
+ * large sprite and lands hits that look like misses.
  */
 export interface Body {
-  pos: Vec2
-  vel: Vec2
-}
-
-export interface PlayerState {
   /** Feet position: x is the horizontal centre, y is the bottom edge. */
   pos: Vec2
   vel: Vec2
+  /** Collider width, centred on pos.x. */
+  w: number
+  /** Collider height, measured upwards from pos.y. */
+  h: number
+}
+
+export interface PlayerState extends Body {
   onGround: boolean
   facing: 1 | -1
   /** Seconds of jump grace remaining after leaving the ground. */
@@ -32,19 +37,16 @@ export interface PlayerState {
 }
 
 /**
- * An enemy. Same rig and body size as the player, so the collision helpers work
- * on it unchanged; `spawnX` and `patrol` mirror the content definition and are
- * carried here so a tick needs no map lookup.
+ * An enemy. `spawn` and `patrol` mirror the content definition and are carried
+ * here so a tick needs no map lookup.
  */
-export interface EnemyState {
+export interface EnemyState extends Body {
   readonly id: string
   readonly roomId: string
   /** Where it started, and where it returns to on respawn. */
   readonly spawn: Vec2
   /** Tiles either side of spawn.x this enemy is allowed to walk. */
   readonly patrol: number
-  pos: Vec2
-  vel: Vec2
   dir: 1 | -1
   hp: number
   alive: boolean

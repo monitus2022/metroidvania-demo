@@ -1,8 +1,6 @@
-import { MAX_SUBSTEP, PLAYER_H, PLAYER_W, TILE } from './constants'
+import { MAX_SUBSTEP, TILE } from './constants'
 import type { Body } from './state'
 import { isSolid, type TileGrid } from './tiles'
-
-const HALF_W = PLAYER_W / 2
 
 /** Snap distances are nudged by this so surfaces never exactly touch. */
 const EPS = 1e-4
@@ -30,13 +28,14 @@ export function moveX(p: Body, grid: TileGrid, dx: number): boolean {
 }
 
 function resolveX(p: Body, grid: TileGrid, dirX: number): boolean {
-  const col = dirX > 0 ? Math.floor((p.pos.x + HALF_W - EPS) / TILE) : Math.floor((p.pos.x - HALF_W) / TILE)
-  const rowStart = Math.floor((p.pos.y - PLAYER_H) / TILE)
+  const half = p.w / 2
+  const col = dirX > 0 ? Math.floor((p.pos.x + half - EPS) / TILE) : Math.floor((p.pos.x - half) / TILE)
+  const rowStart = Math.floor((p.pos.y - p.h) / TILE)
   const rowEnd = Math.floor((p.pos.y - EPS) / TILE)
 
   for (let row = rowStart; row <= rowEnd; row++) {
     if (isSolid(grid, col, row)) {
-      p.pos.x = dirX > 0 ? col * TILE - HALF_W - EPS : (col + 1) * TILE + HALF_W + EPS
+      p.pos.x = dirX > 0 ? col * TILE - half - EPS : (col + 1) * TILE + half + EPS
       p.vel.x = 0
       return true
     }
@@ -60,9 +59,10 @@ export function moveY(p: Body, grid: TileGrid, dy: number): boolean {
 }
 
 function resolveY(p: Body, grid: TileGrid, dirY: number): boolean {
-  const colStart = Math.floor((p.pos.x - HALF_W + EPS) / TILE)
-  const colEnd = Math.floor((p.pos.x + HALF_W - EPS) / TILE)
-  const row = dirY > 0 ? Math.floor((p.pos.y - EPS) / TILE) : Math.floor((p.pos.y - PLAYER_H) / TILE)
+  const half = p.w / 2
+  const colStart = Math.floor((p.pos.x - half + EPS) / TILE)
+  const colEnd = Math.floor((p.pos.x + half - EPS) / TILE)
+  const row = dirY > 0 ? Math.floor((p.pos.y - EPS) / TILE) : Math.floor((p.pos.y - p.h) / TILE)
 
   for (let col = colStart; col <= colEnd; col++) {
     if (isSolid(grid, col, row)) {
@@ -71,7 +71,7 @@ function resolveY(p: Body, grid: TileGrid, dirY: number): boolean {
         p.vel.y = 0
         return true
       }
-      p.pos.y = (row + 1) * TILE + PLAYER_H + EPS
+      p.pos.y = (row + 1) * TILE + p.h + EPS
       p.vel.y = 0
       return false
     }
@@ -88,14 +88,15 @@ function resolveY(p: Body, grid: TileGrid, dirY: number): boolean {
  * a probe exactly on the edge would be ambiguous.
  */
 export function touchingWall(p: Body, grid: TileGrid): -1 | 0 | 1 {
-  const rowStart = Math.floor((p.pos.y - PLAYER_H) / TILE)
+  const half = p.w / 2
+  const rowStart = Math.floor((p.pos.y - p.h) / TILE)
   const rowEnd = Math.floor((p.pos.y - EPS) / TILE)
   const solidInColumn = (col: number): boolean => {
     for (let row = rowStart; row <= rowEnd; row++) if (isSolid(grid, col, row)) return true
     return false
   }
-  if (solidInColumn(Math.floor((p.pos.x - HALF_W - 0.5) / TILE))) return -1
-  if (solidInColumn(Math.floor((p.pos.x + HALF_W + 0.5) / TILE))) return 1
+  if (solidInColumn(Math.floor((p.pos.x - half - 0.5) / TILE))) return -1
+  if (solidInColumn(Math.floor((p.pos.x + half + 0.5) / TILE))) return 1
   return 0
 }
 
@@ -116,20 +117,15 @@ export function boxesOverlap(
   return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
 }
 
-/** The box of a body standing at `pos` (feet at pos.y, centred on pos.x). */
-export function bodyBox(pos: { x: number; y: number }): {
-  x: number
-  y: number
-  w: number
-  h: number
-} {
-  return { x: pos.x - HALF_W, y: pos.y - PLAYER_H, w: PLAYER_W, h: PLAYER_H }
+/** The box of a body standing at its `pos` (feet at pos.y, centred on pos.x). */
+export function bodyBox(body: Body): { x: number; y: number; w: number; h: number } {
+  return { x: body.pos.x - body.w / 2, y: body.pos.y - body.h, w: body.w, h: body.h }
 }
 
 /** Do two bodies overlap? Uses each body's full collider box. */
 export function bodiesOverlap(a: Body, b: Body): boolean {
-  const A = bodyBox(a.pos)
-  const B = bodyBox(b.pos)
+  const A = bodyBox(a)
+  const B = bodyBox(b)
   return boxesOverlap(A.x, A.y, A.w, A.h, B.x, B.y, B.w, B.h)
 }
 
@@ -144,9 +140,10 @@ export function overlapsSolid(
   p: Body,
   grid: TileGrid,
 ): { col: number; row: number } | null {
-  const left = p.pos.x - HALF_W + OVERLAP_EPS
-  const right = p.pos.x + HALF_W - OVERLAP_EPS
-  const top = p.pos.y - PLAYER_H + OVERLAP_EPS
+  const half = p.w / 2
+  const left = p.pos.x - half + OVERLAP_EPS
+  const right = p.pos.x + half - OVERLAP_EPS
+  const top = p.pos.y - p.h + OVERLAP_EPS
   const bottom = p.pos.y - OVERLAP_EPS
 
   for (let row = Math.floor(top / TILE); row <= Math.floor(bottom / TILE); row++) {

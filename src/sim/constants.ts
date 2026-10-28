@@ -36,6 +36,18 @@ export const PLAYER_W = 12
  */
 export const PLAYER_H = 24
 
+/**
+ * The enemy rig's collider.
+ *
+ * Currently the player's size, because the enemy art is the player's rig
+ * recoloured — it has no reason to be a different box yet. It is a *separate*
+ * constant rather than a reuse of PLAYER_W/H so that "every body is secretly
+ * player-sized" stops being true by construction. The boss sets its own, and
+ * anything that assumed a uniform body size now has to say which it means.
+ */
+export const ENEMY_W = 12
+export const ENEMY_H = 24
+
 /** Longest distance the collision resolver will move in one sub-step. */
 export const MAX_SUBSTEP = TILE / 2
 

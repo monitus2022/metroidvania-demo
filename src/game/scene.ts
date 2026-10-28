@@ -5,7 +5,6 @@ import {
   FIXED_DT,
   PLAYER_H,
   PLAYER_MAX_HP,
-  PLAYER_W,
   TILE,
   TRANSITION_LOCK_TICKS,
 } from '../sim/constants'
@@ -517,7 +516,7 @@ export class PlayScene extends Phaser.Scene {
       // Pure magenta: no colour in the character art comes close, so the box
       // can be measured out of a screenshot without ambiguity.
       this.box.lineStyle(1, 0xff00ff, 0.9)
-      this.box.strokeRect(p.pos.x - PLAYER_W / 2, p.pos.y - PLAYER_H, PLAYER_W, PLAYER_H)
+      this.box.strokeRect(p.pos.x - p.w / 2, p.pos.y - p.h, p.w, p.h)
       this.box.lineStyle(1, 0xffffff, 0.3)
       this.box.lineBetween(p.pos.x - 2, p.pos.y, p.pos.x + 2, p.pos.y)
     }

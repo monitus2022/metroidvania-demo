@@ -12,12 +12,14 @@ import {
   ENEMY_ATTACK_HEIGHT,
   ENEMY_ATTACK_RANGE,
   ENEMY_ATTACK_REACH,
+  ENEMY_H,
   ENEMY_HIT_COOLDOWN,
   ENEMY_HP,
   ENEMY_LUNGE_SPEED,
   ENEMY_RECOVER_TICKS,
   ENEMY_RESPAWN_TICKS,
   ENEMY_SPEED,
+  ENEMY_W,
   ENEMY_WINDUP_TICKS,
   FIXED_DT,
   GRAVITY,
@@ -58,15 +60,14 @@ export function isDoorOpen(map: GameMap, door: DoorDef, abilities: readonly stri
   return required !== undefined && abilities.includes(required)
 }
 
-const HALF_W = PLAYER_W / 2
-
 function overlapsCell(p: PlayerState, col: number, row: number): boolean {
   const cl = col * TILE
   const ct = row * TILE
+  const half = p.w / 2
   return (
-    p.pos.x - HALF_W < cl + TILE &&
-    p.pos.x + HALF_W > cl &&
-    p.pos.y - PLAYER_H < ct + TILE &&
+    p.pos.x - half < cl + TILE &&
+    p.pos.x + half > cl &&
+    p.pos.y - p.h < ct + TILE &&
     p.pos.y > ct
   )
 }
@@ -76,6 +77,8 @@ function freshPlayer(map: GameMap, roomId: string): PlayerState {
   return {
     pos: { x: grid.spawn.x, y: grid.spawn.y },
     vel: { x: 0, y: 0 },
+    w: PLAYER_W,
+    h: PLAYER_H,
     onGround: true,
     facing: 1,
     // Grant coyote time immediately, so a jump on frame 1 works.
@@ -105,6 +108,8 @@ export function freshEnemies(map: GameMap): EnemyState[] {
         patrol: enemy.patrol,
         pos: { ...spawn },
         vel: { x: 0, y: 0 },
+        w: ENEMY_W,
+        h: ENEMY_H,
         dir: -1,
         hp: ENEMY_HP,
         alive: true,
@@ -159,7 +164,7 @@ export function respawn(state: WorldState): WorldState {
 
 /** The area a swing covers this tick: a box in front of the player. */
 function swingBox(p: PlayerState): { x: number; y: number; w: number; h: number } {
-  const body = bodyBox(p.pos)
+  const body = bodyBox(p)
   return {
     x: p.facing === 1 ? body.x + body.w : body.x - ATTACK_REACH,
     y: body.y,
@@ -199,7 +204,7 @@ export function enemyAttackPhase(e: EnemyState): AttackPhase {
  * lunge carries the swing straight past them.
  */
 export function enemySwingBox(e: EnemyState): { x: number; y: number; w: number; h: number } {
-  const body = bodyBox(e.pos)
+  const body = bodyBox(e)
   const front = e.dir === 1 ? body.x + body.w + ENEMY_ATTACK_REACH : body.x - ENEMY_ATTACK_REACH
   const left = Math.min(body.x, front)
   const right = Math.max(body.x + body.w, front)
@@ -276,7 +281,7 @@ function stepEnemy(e: EnemyState, grid: TileGrid, dt: number, player: PlayerStat
   if (blocked) turn()
 
   // No floor ahead: turn rather than walk off.
-  const aheadCol = Math.floor((e.pos.x + e.dir * (PLAYER_W / 2 + 2)) / TILE)
+  const aheadCol = Math.floor((e.pos.x + e.dir * (e.w / 2 + 2)) / TILE)
   const belowRow = Math.floor((e.pos.y + 1) / TILE)
   if (!isSolid(grid, aheadCol, belowRow)) turn()
 
@@ -409,7 +414,7 @@ export function step(state: WorldState, input: InputMask, dt: number = FIXED_DT)
     const swing = swingBox(pl)
     for (const enemy of next.enemies) {
       if (!enemy.alive || enemy.roomId !== next.roomId || enemy.hitCooldown > 0) continue
-      const box = bodyBox(enemy.pos)
+      const box = bodyBox(enemy)
       if (!boxesOverlap(swing.x, swing.y, swing.w, swing.h, box.x, box.y, box.w, box.h)) continue
       // Per-enemy immunity is what makes one swing one hit — without it the
       // 12-tick window would deal 12 damage and no enemy could survive.
@@ -431,7 +436,7 @@ export function step(state: WorldState, input: InputMask, dt: number = FIXED_DT)
   next.invulnTimer = Math.max(0, next.invulnTimer - 1)
   next.hurtTimer = Math.max(0, next.hurtTimer - 1)
   if (next.invulnTimer === 0) {
-    const playerBox = bodyBox(pl.pos)
+    const playerBox = bodyBox(pl)
     for (const enemy of next.enemies) {
       if (!enemy.alive || enemy.roomId !== next.roomId) continue
       if (enemyAttackPhase(enemy) !== 'active') continue
