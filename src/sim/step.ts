@@ -2,6 +2,7 @@ import {
   AIR_ACCEL_FACTOR,
   AIR_FRICTION,
   COYOTE_TIME,
+  DOOR_ARRIVAL_INSET,
   DOUBLE_JUMP_VELOCITY,
   FIXED_DT,
   GRAVITY,
@@ -172,9 +173,21 @@ export function step(state: WorldState, input: InputMask, dt: number = FIXED_DT)
       if (!isDoorOpen(next.map, door, next.abilities)) continue
 
       next.roomId = door.to
+
+      // Land the player *inside* the target room, not on the door tile. Doors
+      // are two-way by default, so arriving on the door's own tile would put the
+      // player inside the return trigger and bounce them straight back the
+      // moment the transition lock expires.
+      const target = next.map.rooms[door.to]!
+      const inward = door.toCol < target.grid.w / 2 ? 1 : -1
+      const arrivalCol = Math.max(
+        0,
+        Math.min(target.grid.w - 1, door.toCol + inward * DOOR_ARRIVAL_INSET),
+      )
+
       next.player = {
         ...freshPlayer(next.map, door.to),
-        pos: { x: door.toCol * TILE + TILE / 2, y: (door.toRow + 1) * TILE },
+        pos: { x: arrivalCol * TILE + TILE / 2, y: (door.toRow + 1) * TILE },
       }
       next.transitionLock = TRANSITION_LOCK_TICKS
       break

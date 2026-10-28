@@ -121,6 +121,23 @@ test('the double jump is picked up by walking, and then works mid-air', async ({
   await page.keyboard.up('Space')
 })
 
+test('the player can walk back into the previous room', async ({ page }) => {
+  await open(page)
+  expect(await roomId(page)).toBe('atrium')
+
+  await page.keyboard.down('ArrowRight')
+  await expect.poll(() => roomId(page), { timeout: 15_000 }).toBe('gallery')
+  await page.keyboard.up('ArrowRight')
+
+  // Standing still on arrival must not bounce the player back.
+  await page.waitForTimeout(600)
+  expect(await roomId(page)).toBe('gallery')
+
+  await page.keyboard.down('ArrowLeft')
+  await expect.poll(() => roomId(page), { timeout: 15_000 }).toBe('atrium')
+  await page.keyboard.up('ArrowLeft')
+})
+
 test('respawn returns the player to the room entry', async ({ page }) => {
   await open(page)
   const entryX = await playerX(page)

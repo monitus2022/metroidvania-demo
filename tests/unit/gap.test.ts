@@ -67,8 +67,13 @@ describe('4-tile gap', () => {
     expect(window.length).toBeGreaterThanOrEqual(10)
   })
 
-  it('holding RIGHT and jumping at frame 40 clears the pit', () => {
-    const a = attempt(40)
+  it('clears the pit when jumping in the middle of the window', () => {
+    // Deliberately not a hardcoded frame: a fixed frame silently stops testing
+    // anything the moment the physics is retuned. The middle of the measured
+    // window is the fairest point to pin.
+    const window = clearingWindow()
+    const mid = window[Math.floor(window.length / 2)]!
+    const a = attempt(mid)
     expect(a.fell).toBe(false)
     expect(a.cleared).toBe(true)
     expect(a.finalX).toBeGreaterThanOrEqual(GAP4_END_X)

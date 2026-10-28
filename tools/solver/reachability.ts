@@ -35,7 +35,7 @@ export interface Movement {
 }
 
 /** Base movement, always available. Measured from the sim — see anchor.test.ts. */
-export const BASE_MOVEMENT: Movement = { jumpHeight: 2, jumpDistance: 5 }
+export const BASE_MOVEMENT: Movement = { jumpHeight: 2, jumpDistance: 3 }
 
 /**
  * Movement granted by each ability.
@@ -46,7 +46,7 @@ export const BASE_MOVEMENT: Movement = { jumpHeight: 2, jumpDistance: 5 }
  * tuning constants and let the measurement tell you the new envelope.
  */
 export const ABILITY_MOVEMENT: Readonly<Record<string, Partial<Movement>>> = {
-  doubleJump: { jumpHeight: 5, jumpDistance: 9 },
+  doubleJump: { jumpHeight: 5, jumpDistance: 8 },
 }
 
 /**

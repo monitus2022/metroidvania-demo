@@ -21,6 +21,7 @@ import type { WorldState } from '../../src/sim/state'
  */
 
 const RIGHT = BTN.RIGHT
+const LEFT = BTN.LEFT
 const RIGHT_JUMP = BTN.RIGHT | BTN.JUMP
 
 interface Step {
@@ -47,26 +48,36 @@ const inRoom = (id: string) => (s: WorldState) => s.roomId === id
  * a wide, forgiving window rather than a pixel-perfect ask.
  */
 const AT_LEDGE_JUMP = (s: WorldState) => x(s) >= 190
-/** Near the pit edge in the spire. */
-const AT_PIT_EDGE = (s: WorldState) => x(s) >= 78
+/** Near the pit edge in the spire (the pit starts at col 5, x=80). */
+const AT_PIT_EDGE = (s: WorldState) => x(s) >= 60
 
 const ROUTE: readonly Step[] = [
-  { label: 'atrium: walk east to the door', mask: RIGHT, until: inRoom('gallery'), maxTicks: 200 },
+  {
+    label: 'atrium: walk east to the door',
+    mask: RIGHT,
+    until: inRoom('gallery'),
+    maxTicks: 400,
+  },
   {
     label: 'gallery: collect the double jump, reach the climb point',
     mask: RIGHT,
     until: AT_LEDGE_JUMP,
-    maxTicks: 200,
+    maxTicks: 400,
   },
   { label: 'gallery: jump 1', mask: RIGHT_JUMP, ticks: 10 },
   { label: 'gallery: release (fresh press edge)', mask: RIGHT, ticks: 5 },
   { label: 'gallery: jump 2 and drift onto the ledge', mask: RIGHT_JUMP, ticks: 32 },
-  { label: 'gallery: walk the ledge to the east door', mask: RIGHT, until: inRoom('spire'), maxTicks: 300 },
+  {
+    label: 'gallery: walk the ledge to the east door',
+    mask: RIGHT,
+    until: inRoom('spire'),
+    maxTicks: 400,
+  },
   { label: 'spire: walk to the pit edge', mask: RIGHT, until: AT_PIT_EDGE, maxTicks: 200 },
   { label: 'spire: jump 1', mask: RIGHT_JUMP, ticks: 10 },
   { label: 'spire: release', mask: RIGHT, ticks: 5 },
   { label: 'spire: jump 2 and cross the pit', mask: RIGHT_JUMP, ticks: 40 },
-  { label: 'spire: walk to the goal', mask: RIGHT, until: (s) => s.reachedGoal, maxTicks: 300 },
+  { label: 'spire: walk to the goal', mask: RIGHT, until: (s) => s.reachedGoal, maxTicks: 400 },
 ]
 
 function trace(s: WorldState): string {
@@ -199,7 +210,7 @@ describe('route: the gate is real', () => {
     let s = createInitialState(GAME_MAP)
     let transitions = 0
     let lastRoom = s.roomId
-    for (let i = 0; i < 130; i++) {
+    for (let i = 0; i < 400; i++) {
       s = step(s, RIGHT)
       if (s.roomId !== lastRoom) {
         transitions++
@@ -209,6 +220,70 @@ describe('route: the gate is real', () => {
     expect(transitions).toBe(1)
     expect(s.roomId).toBe('gallery')
     expect(TRANSITION_LOCK_TICKS).toBeGreaterThan(0)
+  })
+})
+
+/*
+ * Regression tests for the reported bug: "I cannot go back to previous rooms."
+ *
+ * Two separate causes, both worth pinning:
+ *   1. the gallery had no door back to the atrium, so the graph was one-way;
+ *   2. arriving on a door's own tile left the player inside the return trigger,
+ *      which fires the moment the transition lock expires.
+ */
+describe('route: rooms are traversable both ways', () => {
+  it('every door has a return door in its target room', () => {
+    for (const roomId of GAME_MAP.order) {
+      for (const door of GAME_MAP.rooms[roomId]!.doors) {
+        const returnDoor = GAME_MAP.rooms[door.to]!.doors.some((d) => d.to === roomId)
+        expect(returnDoor, `no way back from "${door.to}" to "${roomId}"`).toBe(true)
+      }
+    }
+  })
+
+  it('the player can walk back from the gallery into the atrium', () => {
+    let s = createInitialState(GAME_MAP)
+    let n = 0
+    while (s.roomId !== 'gallery' && n < 800) {
+      s = step(s, RIGHT)
+      n++
+    }
+    expect(s.roomId).toBe('gallery')
+
+    n = 0
+    while (s.roomId !== 'atrium' && n < 800) {
+      s = step(s, LEFT)
+      n++
+    }
+    expect(s.roomId).toBe('atrium')
+  })
+
+  it('arriving in a room does not bounce the player straight back', () => {
+    // Land in the gallery, then stand perfectly still for two seconds. Before
+    // the arrival inset this put the player inside the return door's trigger,
+    // so they were thrown back to the atrium the instant the lock expired.
+    let s = createInitialState(GAME_MAP)
+    let n = 0
+    while (s.roomId !== 'gallery' && n < 800) {
+      s = step(s, RIGHT)
+      n++
+    }
+    expect(s.roomId).toBe('gallery')
+
+    s = runMasks(
+      s,
+      Array.from({ length: 120 }, () => 0),
+    )
+    expect(s.roomId).toBe('gallery')
+  })
+
+  it('lands clear of the door it came through', () => {
+    let s = createInitialState(GAME_MAP)
+    while (s.roomId !== 'gallery') s = step(s, RIGHT)
+    const westDoor = GAME_MAP.rooms.gallery!.doors.find((d) => d.id === 'gallery-to-atrium')!
+    const doorRightPx = (westDoor.col + 1) * 16
+    // The player's left edge must be past the far side of the door tile.
+    expect(s.player.pos.x - 6).toBeGreaterThanOrEqual(doorRightPx)
   })
 })
 

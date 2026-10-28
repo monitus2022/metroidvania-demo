@@ -65,7 +65,13 @@ describe('content: the shipped map', () => {
     const r = run()
     expect(r.abilities).toEqual(['doubleJump'])
     expect(r.reachableRooms).toEqual(['atrium', 'gallery', 'spire'])
-    expect(r.openedDoors).toEqual(['atrium-to-gallery', 'gallery-to-spire'])
+    // Every door is two-way, so a full solve opens all four.
+    expect(r.openedDoors).toEqual([
+      'atrium-to-gallery',
+      'gallery-to-atrium',
+      'gallery-to-spire',
+      'spire-to-gallery',
+    ])
   })
 
   it('every room is rectangular and its entry cell is standable', () => {
@@ -165,12 +171,31 @@ describe('solver: gating actually gates', () => {
     expect(r.softlocks).toEqual(['oubliette'])
   })
 
-  it('a room the player can enter but never leave is reported, not ignored', () => {
+  it('an unkeyed gate no longer traps the player, because doors are two-way', () => {
     const rooms = mutRooms()
     roomIn(rooms, 'gallery').items = []
     const r = run(rooms)
     expect(r.beatable).toBe(false)
-    expect(r.softlocks).toContain('gallery')
+    // The player can walk back to the atrium and keep exploring; being short of
+    // a key is a dead end, not a softlock. This was a genuine softlock before
+    // the gallery gained a door back to the atrium.
+    expect(r.softlocks).toEqual([])
+  })
+
+  it('still reports a room with no exit at all as a softlock', () => {
+    const rooms = mutRooms()
+    rooms.rooms.push({ id: 'sealed', entry: { col: 2, row: 9 }, rows: FLAT_ROWS })
+    roomIn(rooms, 'atrium').doors!.push({
+      id: 'atrium-to-sealed',
+      col: 18,
+      row: 9,
+      to: 'sealed',
+      toCol: 2,
+      toRow: 9,
+    })
+    const r = run(rooms)
+    expect(r.beatable).toBe(true)
+    expect(r.softlocks).toEqual(['sealed'])
   })
 })
 
@@ -183,7 +208,8 @@ describe('solver: content validation', () => {
 
   it('rejects a door referencing a gate that is not defined', () => {
     const rooms = mutRooms()
-    roomIn(rooms, 'gallery').doors![0]!.gate = 'gate-not-defined'
+    const gated = roomIn(rooms, 'gallery').doors!.find((d) => d.id === 'gallery-to-spire')!
+    gated.gate = 'gate-not-defined'
     expect(run(rooms).errors).toContain(
       'door "gallery-to-spire" references gate "gate-not-defined" missing from gates.json',
     )
