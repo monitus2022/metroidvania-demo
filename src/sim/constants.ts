@@ -36,6 +36,39 @@ export const PLAYER_W = 12
  */
 export const PLAYER_H = 24
 
+/**
+ * The enemy rig's collider.
+ *
+ * Currently the player's size, because the enemy art is the player's rig
+ * recoloured — it has no reason to be a different box yet. It is a *separate*
+ * constant rather than a reuse of PLAYER_W/H so that "every body is secretly
+ * player-sized" stops being true by construction. The boss sets its own, and
+ * anything that assumed a uniform body size now has to say which it means.
+ */
+export const ENEMY_W = 12
+export const ENEMY_H = 24
+
+/**
+ * The boss: twice the player in every dimension.
+ *
+ * Two pixels of art per world pixel, so the collider doubles with it. The scale
+ * is deliberate and integer — the art is 25-32px of ink in an 80px cell, i.e.
+ * almost exactly player-sized, and this pack is literally named "NightBorne
+ * *Warrior*". Used at 1:1 it reads as a rival duelist; at 2x its ~60px of ink
+ * against the player's ~27px finally reads as something you keep your distance
+ * from. Integer scaling also keeps pixel art crisp where 1.5x would not.
+ */
+export const BOSS_SCALE = 2
+export const BOSS_W = PLAYER_W * BOSS_SCALE
+export const BOSS_H = PLAYER_H * BOSS_SCALE
+
+/** Four swings to kill, against one for a husk: a fight, not a chore. */
+export const BOSS_HP = 4
+/** Slower than the player's 130, so disengaging always works. */
+export const BOSS_SPEED = 70
+/** Horizontal distance at which the boss stops patrolling and comes for you. */
+export const BOSS_AGGRO = 140
+
 /** Longest distance the collision resolver will move in one sub-step. */
 export const MAX_SUBSTEP = TILE / 2
 
@@ -180,3 +213,58 @@ export const PLAYER_HURT_TICKS = 20
 /** Knockback applied on taking a hit, away from the attacker. */
 export const PLAYER_KNOCKBACK_X = 95 // px/s
 export const PLAYER_KNOCKBACK_Y = -155 // px/s
+
+/**
+ * Enemy archetypes: the numbers that differ between "a husk" and "the boss".
+ *
+ * Data rather than branches, because the sim, the content validator and the
+ * renderer all need to agree on the same set. A boss whose collider, health and
+ * sprite scale are each decided in a different place is a boss that will
+ * disagree with itself. `respawns: false` is what makes a defeated boss stay
+ * defeated, and `chase` is what makes the boss come to you instead of guarding a
+ * spot you can walk around.
+ *
+ * Declared at the end of the file because it reads the ENEMY_* constants above.
+ */
+export interface Archetype {
+  /** Collider size. */
+  w: number
+  h: number
+  /** Render scale for the sprite. Must match the collider's scale. */
+  scale: number
+  hp: number
+  speed: number
+  /** Walk at the player when it notices them, or only patrol? */
+  chase: boolean
+  /** Come back after being killed? */
+  respawns: boolean
+}
+
+export const ARCHETYPES: Record<string, Archetype> = {
+  enraged: {
+    w: ENEMY_W,
+    h: ENEMY_H,
+    scale: 1,
+    hp: ENEMY_HP,
+    speed: ENEMY_SPEED,
+    chase: false,
+    respawns: true,
+  },
+  nightborne: {
+    w: BOSS_W,
+    h: BOSS_H,
+    scale: BOSS_SCALE,
+    hp: BOSS_HP,
+    speed: BOSS_SPEED,
+    chase: true,
+    respawns: false,
+  },
+}
+
+/** Archetype for a content `kind`, or undefined if the kind is unknown. */
+export function archetypeFor(kind: string): Archetype | undefined {
+  return Object.prototype.hasOwnProperty.call(ARCHETYPES, kind) ? ARCHETYPES[kind] : undefined
+}
+
+/** Every kind the content may name. */
+export const KNOWN_ENEMY_ARCHETYPES = Object.keys(ARCHETYPES)

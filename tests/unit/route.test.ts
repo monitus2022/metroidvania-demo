@@ -105,7 +105,18 @@ const ROUTE: readonly Step[] = [
   { label: 'ascent: climb the chimney', mask: RIGHT_JUMP, until: yAtMost(52), maxTicks: 900 },
   { label: 'ascent: step left and walk the ledge to the door', mask: LEFT, until: inRoom('summit'), maxTicks: 600 },
 
-  { label: 'summit: walk to the goal', mask: RIGHT, until: (s) => s.reachedGoal, maxTicks: 600 },
+  // summit: the boss arena. The flag sits on a plinth at the far end, and the
+  // boss cannot climb it — it has no jump. So the route outruns it (130 px/s
+  // against its 70) and steps up onto the plinth, which is also the honest
+  // answer to "how does a player who does not want to fight get through".
+  //
+  // The hop is a *fixed* short burst, not `until reachedGoal` with JUMP held.
+  // Holding jump with the wall climb makes the player climb the room's right
+  // wall indefinitely: they sail past the goal cell, pin to the ceiling and stay
+  // there, which reads as an unreachable goal rather than as a bad input policy.
+  { label: 'summit: run east to the plinth', mask: RIGHT, until: xAtLeast(250), maxTicks: 600 },
+  { label: 'summit: hop onto the plinth', mask: RIGHT_JUMP, ticks: 12 },
+  { label: 'summit: walk to the flag', mask: RIGHT, until: (s) => s.reachedGoal, maxTicks: 300 },
 ]
 
 function trace(s: WorldState): string {

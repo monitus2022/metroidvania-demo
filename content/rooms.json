@@ -2,8 +2,8 @@
   "startRoom": "atrium",
   "goal": {
     "room": "summit",
-    "col": 16,
-    "row": 9
+    "col": 19,
+    "row": 8
   },
   "rooms": [
     {
@@ -330,7 +330,7 @@
     },
     {
       "id": "summit",
-      "comment": "Goal. The flag marks the end.",
+      "comment": "Boss arena. The flag sits on a plinth at the far end; the NightBorne stands between the entry and it.",
       "entry": {
         "col": 0,
         "row": 9
@@ -345,7 +345,7 @@
         "....................",
         "....................",
         "....................",
-        "....................",
+        ".................###",
         "####################",
         "####################"
       ],
@@ -364,8 +364,17 @@
         {
           "id": "summit-goal-flag",
           "kind": "flag",
-          "col": 16,
-          "row": 9
+          "col": 19,
+          "row": 8
+        }
+      ],
+      "enemies": [
+        {
+          "id": "summit-nightborne",
+          "kind": "nightborne",
+          "col": 10,
+          "row": 9,
+          "patrol": 5
         }
       ]
     }

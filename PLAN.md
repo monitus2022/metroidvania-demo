@@ -102,32 +102,42 @@ though it looks fine.
 
 Built so far: 8 rooms (`atrium, gallery, shaft, overlook, cistern, foundry, ascent,
 summit`), 2,080 tiles, 14 doors, 2 abilities (double jump, wall climb), 2 pickups,
-3 enemies, 1 goal flag. Real art throughout: parallax backgrounds, tiled terrain, a
-recoloured enemy, damage feedback.
+4 enemies (3 husks + a boss), 1 goal flag. Real art throughout: parallax
+backgrounds, tiled terrain, a recoloured enemy, damage feedback, and the
+NightBorne boss in a dedicated arena.
 
 - [x] Solver green on all rooms — beatable, `doubleJump` + `wallClimb` both required,
       14/14 doors usable in both directions, no softlocks
 - [x] Fuzzer green — no tunnelling, no stuck-in-geometry over random input streams
 - [x] **A scripted playthrough with real inputs finishes the shipped level** —
-      spawn → goal in 1,104 ticks (18.4s), passing through every room in order
+      spawn → goal in 1,135 ticks (18.9s), passing through every room in order
 - [x] Enemies: patrol, telegraphed attack, one-hit death, respawn — all deterministic
 - [ ] Every gap and ledge clears the fairness floor above, measured per gap.
       Measured for the unit fixtures (the 4-tile pit window is 33–45 frames) and the
       whole route is proven completable, but the window has **not** been measured
       individually for the new rooms' gaps and ledges.
-- [ ] Simulated completion time ~5 minutes — **currently 18.4 seconds**, so this is
+- [ ] Simulated completion time ~5 minutes — **currently 18.9 seconds**, so this is
       still the real work. Content volume, not tooling, is the bottleneck: the
       pipeline would take 20 more rooms as happily as 8.
-- [ ] A boss. Nothing exists yet.
+- [x] **A boss.** The NightBorne stands in the `summit` arena between the entry and
+      the flag. Four hits to kill (against one for a husk), chases within 140px,
+      stops at ledges, and does not respawn. Rendered at integer 2x with a matching
+      24x48 collider, and the HUD carries its health.
+      Verified in the **built bundle**, not just the sim: sprite scale 2,
+      display 160x160, collider 24x48, feet exactly on the sim position, and a
+      scripted fight taking it 4 → 3 → 2 → 1 → 0 with the player surviving at 2/3.
+      Tests: `tests/unit/boss.test.ts` (box, hits, permanence, chase, ledge stop),
+      plus the solver reporting the arena as outside its model in its own words.
 
 **Evidence commands:** `npm run solve` · `npm test` · the route test prints its own
 timing and the critical-path health floor.
 
-**Measured, and worth a human decision — the route's health floor is 3/3.** Telegraphing
-the enemies' attacks made a player who keeps moving take no damage at all. Fair and
-readable, currently harmless. The dials are the lunge speed (120 px/s against your 130)
-and the commit range (34px); pushing the lunge above your run speed would make a
-committed attack genuinely threatening while keeping it dodgeable by crossing or jumping.
+**Measured, and worth a human decision — the route's health floor is 2/3.** Telegraphing
+the husks' attacks made a player who keeps moving take no damage from them at all (the
+floor was 3/3 with husks only). **The boss is now the only thing on the critical path
+that costs a hit point** — it lands one on the reference route. That is a good default,
+and the dials are the lunge speed (120 px/s against your 130 run), the commit range
+(34px) and `BOSS_AGGRO`.
 
 ### M4.1 — Known gaps, ranked by what they move
 
@@ -138,9 +148,11 @@ committed attack genuinely threatening while keeping it dodgeable by crossing or
    literally unplayable while every unit test passed. It says nothing about the 95% of
    play it does not touch. Randomised/beam-searched playthroughs, run **with enemies
    present**, would shrink that risk from one path to many.
-3. **The boss.** Art is available (see below); the work is a body-size refactor, a boss
-   entity with phases, an arena room, and a sealed-until-dead gate that goes in the
-   solver's `unverified` list.
+3. ~~**The boss.**~~ **Done** (see M4.2). Still open on it: the arena has no *sealed*
+   gate, so the fight is avoidable by outrunning the boss and climbing the plinth.
+   That was deliberate — a seal needs a mechanic the solver cannot model at all,
+   whereas "a big thing between you and the flag" stays within its model's blind
+   spot. Worth revisiting if the fight should be mandatory.
 4. **Audio, title/win screens.** Cheapest possible jump in "this is a game".
 5. **Visual debt:** no slopes; vertical faces are flat-cut (the tileset has no cap
    pieces); the sprite art is about twice the collider width, so characters overlap at
@@ -192,10 +204,19 @@ Static deploy, live link, saves.
       bounce (the `DOOR_ARRIVAL_INSET` fix holds in production). Cache headers correct:
       `index.html` revalidates, the hashed asset is `immutable, max-age=31536000`.
       At that verification the deployed bundle matched `dev` HEAD (`9afcaf5`).
-- [ ] **Production is currently behind `dev`.** `dev` carries the whole of M4 — art,
-      terrain, the 8-room map, enemies — and the human merges `dev` → `main` by hand, so
-      the live site still runs the M3 build. Re-verify the deployed hash after the next
-      merge; the check above is a point-in-time record, not a standing guarantee.
+- [x] **Production carries M4** as of merge `e526ff9` (`dev` → `main`). Verified by
+      headless Chromium against the live URL: boots with no console errors, sim advancing,
+      real key events move the player (spawn `x=40` → `x=270.8`), 3 enemies in the state,
+      and the M4 art is what renders — painted parallax layers, textured sand/dirt terrain
+      rather than flat blocks, the character sprite, the chest prop, the HUD. Deployed
+      bundle hash matches a local build of `main`.
+- [ ] **The NightBorne pack is still reachable in `main`'s history** (commits `f36660d`
+      and `1dfa836`). `main`'s tip no longer tracks it, but the blobs are retrievable, so
+      the licence's no-redistribution clause is still not fully satisfied for the public
+      repo. Next step: rewrite `main`'s history to drop those paths, or make the repo
+      private, which removes the problem outright.
+      Note for that rewrite: GitHub keeps old commits reachable through PR refs
+      (`refs/pull/5/head`), so a force-push alone may not make the files unrecoverable.
 - Deploy config is ready and verified in `DEPLOY.md`: Cloudflare Pages, build `npm run build`,
   output `dist`, `NODE_VERSION=24`. The artifact was verified booting from a deep subpath.
   Remaining work is the human authorising Cloudflare, then verifying the live URL.

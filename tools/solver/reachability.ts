@@ -1,3 +1,4 @@
+import { archetypeFor, ENEMY_H, ENEMY_W, TILE } from '../../src/sim/constants'
 import { isSolid, type TileGrid } from '../../src/sim/tiles'
 import { KNOWN_ENEMY_KINDS, KNOWN_PROP_KINDS, type GameMap } from '../../src/sim/content'
 
@@ -299,7 +300,31 @@ function validate(map: GameMap, gates: Readonly<Record<string, string>>): string
         errors.push(`enemy "${enemy.id}" is outside room "${roomId}"`)
         continue
       }
-      if (!isEmpty(g, enemy.col, enemy.row)) {
+      // Check the whole collider, not just the spawn cell.
+      //
+      // A boss is three tiles tall, so its head can be buried in a platform while
+      // its feet stand on perfectly good ground. A single-cell check passes that
+      // and the body wedges on the first tick — the same failure as the player
+      // headroom bug, and just as invisible to every other test.
+      const arch = archetypeFor(enemy.kind)
+      const cx = enemy.col * TILE + TILE / 2
+      const feet = (enemy.row + 1) * TILE
+      const halfW = (arch?.w ?? ENEMY_W) / 2
+      const topRow = Math.floor((feet - (arch?.h ?? ENEMY_H)) / TILE)
+      const leftCol = Math.floor((cx - halfW) / TILE)
+      const rightCol = Math.floor((cx + halfW - 1e-6) / TILE)
+
+      let buried = false
+      for (let row = topRow; row <= enemy.row && !buried; row++) {
+        for (let col = leftCol; col <= rightCol; col++) {
+          if (!isEmpty(g, col, row)) {
+            buried = true
+            break
+          }
+        }
+      }
+
+      if (buried) {
         errors.push(`enemy "${enemy.id}" is inside solid terrain in "${roomId}"`)
       } else if (!isSolid(g, enemy.col, enemy.row + 1)) {
         errors.push(`enemy "${enemy.id}" has no ground under it in "${roomId}"`)
@@ -427,12 +452,27 @@ export function solve(map: GameMap): SolveResult {
   // where "beatable" is an assumption rather than a result.
   const unverified: string[] = []
   for (const roomId of map.order) {
-    const count = map.rooms[roomId]!.enemies.length
-    if (count === 0) continue
-    unverified.push(
-      `room "${roomId}" places ${count} ${count === 1 ? 'enemy' : 'enemies'}: ` +
-        `movement is verified, combat is not`,
-    )
+    const enemies = map.rooms[roomId]!.enemies
+    if (enemies.length === 0) continue
+
+    // A boss is a special case worth naming: it cannot be walked past by
+    // accident, it does not respawn, and the goal often sits behind it — so the
+    // solver's "the player can reach the goal tile" says nothing about whether
+    // they can get there alive.
+    const bosses = enemies.filter((e) => archetypeFor(e.kind)?.respawns === false)
+    if (bosses.length > 0) {
+      unverified.push(
+        `room "${roomId}" holds a boss (${bosses.map((e) => e.id).join(', ')}): ` +
+          `movement is verified, winning the fight is not`,
+      )
+    }
+    const count = enemies.length - bosses.length
+    if (count > 0) {
+      unverified.push(
+        `room "${roomId}" places ${count} ${count === 1 ? 'enemy' : 'enemies'}: ` +
+          `movement is verified, combat is not`,
+      )
+    }
   }
 
   return {

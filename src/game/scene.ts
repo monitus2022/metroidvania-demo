@@ -1,11 +1,11 @@
 import Phaser from 'phaser'
 import {
+  archetypeFor,
   DOOR_ARRIVAL_INSET,
   ENEMY_WINDUP_TICKS,
   FIXED_DT,
   PLAYER_H,
   PLAYER_MAX_HP,
-  PLAYER_W,
   TILE,
   TRANSITION_LOCK_TICKS,
 } from '../sim/constants'
@@ -20,11 +20,11 @@ import {
   respawn,
   step,
 } from '../sim/step'
-import type { WorldState } from '../sim/state'
+import type { EnemyState, WorldState } from '../sim/state'
 import { floorTopY, isSolid } from '../sim/tiles'
 import { PARALLAX } from './parallax'
 import { PROP_STYLES } from './props'
-import { CURRENT, ENEMY, SPRITE_SETS } from './sprites'
+import { CURRENT, SPRITE_SETS, spriteSetFor } from './sprites'
 import { TERRAIN } from './terrain'
 
 /** Diagnostic view of the sprite, so anchoring can be asserted exactly. */
@@ -41,6 +41,34 @@ export interface SpriteInfo {
   anim: string | null
   posX: number
   posY: number
+}
+
+/**
+ * The same diagnostic view for enemies, plus enough of the sim state to check
+ * that the art agrees with the collider — which is the whole risk with a boss
+ * drawn at a different scale from everything else.
+ */
+export interface EnemySpriteInfo {
+  id: string
+  kind: string
+  x: number
+  y: number
+  displayWidth: number
+  displayHeight: number
+  scaleX: number
+  frameWidth: number
+  frameHeight: number
+  originY: number
+  flipX: boolean
+  visible: boolean
+  anim: string | null
+  posX: number
+  posY: number
+  /** Collider size from the sim. */
+  w: number
+  h: number
+  hp: number
+  alive: boolean
 }
 
 declare global {
@@ -60,12 +88,35 @@ declare global {
       gotoRoom: (roomId: string, atCol?: number) => boolean
       /** Prop positions in the current room, for asserting scenery placement. */
       propInfo: () => { id: string; kind: string; x: number; y: number; anim: string | null }[]
+      /**
+       * Sprite metrics for every live enemy, so the boss's render scale and
+       * anchoring can be asserted numerically. Eyeballing a 2x sprite in a
+       * screenshot cannot tell you whether the art and the collider agree.
+       */
+      enemyInfo: () => EnemySpriteInfo[]
     }
   }
 }
 
 /** `?boxes` draws the collision box over the sprite, for checking alignment. */
 const DEBUG_BOXES = new URLSearchParams(window.location.search).has('boxes')
+
+/**
+ * A boss's remaining health, as a text bar.
+ *
+ * Text rather than a canvas bar because the HUD is a DOM overlay: it stays crisp
+ * at the upscaled resolution, and it is readable in a screenshot, which is how
+ * this project checks anything visual. ASCII rather than block glyphs so it
+ * cannot render as tofu in a font that lacks them.
+ *
+ * The point is feedback. Four hits is a fight, and a fight with no visible
+ * progress is indistinguishable from a boss that is not taking damage.
+ */
+function bossBar(boss: EnemyState): string {
+  const full = archetypeFor(boss.kind)?.hp ?? boss.hp
+  const hp = Math.max(0, Math.min(boss.hp, full))
+  return `NIGHTBORNE  [${'#'.repeat(hp)}${'-'.repeat(full - hp)}]  ${hp}/${full}`
+}
 
 /** Above this horizontal speed the character reads as running, not standing. */
 const RUN_ANIM_THRESHOLD = 12
@@ -227,6 +278,35 @@ export class PlayScene extends Phaser.Scene {
         posX: this.state.player.pos.x,
         posY: this.state.player.pos.y,
       }),
+      enemyInfo: () => {
+        const out: EnemySpriteInfo[] = []
+        for (const enemy of this.state.enemies) {
+          const sprite = this.enemySprites.get(enemy.id)
+          if (!sprite) continue
+          out.push({
+            id: enemy.id,
+            kind: enemy.kind,
+            x: sprite.x,
+            y: sprite.y,
+            displayWidth: sprite.displayWidth,
+            displayHeight: sprite.displayHeight,
+            scaleX: sprite.scaleX,
+            frameWidth: sprite.width,
+            frameHeight: sprite.height,
+            originY: sprite.originY,
+            flipX: sprite.flipX,
+            visible: sprite.visible,
+            anim: sprite.anims.currentAnim?.key ?? null,
+            posX: enemy.pos.x,
+            posY: enemy.pos.y,
+            w: enemy.w,
+            h: enemy.h,
+            hp: enemy.hp,
+            alive: enemy.alive,
+          })
+        }
+        return out
+      },
       gotoRoom: (roomId: string, atCol?: number) => {
         const room = this.state.map.rooms[roomId]
         if (!room) return false
@@ -517,7 +597,7 @@ export class PlayScene extends Phaser.Scene {
       // Pure magenta: no colour in the character art comes close, so the box
       // can be measured out of a screenshot without ambiguity.
       this.box.lineStyle(1, 0xff00ff, 0.9)
-      this.box.strokeRect(p.pos.x - PLAYER_W / 2, p.pos.y - PLAYER_H, PLAYER_W, PLAYER_H)
+      this.box.strokeRect(p.pos.x - p.w / 2, p.pos.y - p.h, p.w, p.h)
       this.box.lineStyle(1, 0xffffff, 0.3)
       this.box.lineBetween(p.pos.x - 2, p.pos.y, p.pos.x + 2, p.pos.y)
     }
@@ -525,9 +605,18 @@ export class PlayScene extends Phaser.Scene {
     this.cameras.main.centerOn(p.pos.x, p.pos.y - PLAYER_H / 2)
 
     const ability = hasAbility(this.state, 'doubleJump') ? 'double jump' : 'no ability'
+
+    // The boss's health, but only while you are in its room. Keyed on "does not
+    // respawn" rather than on its id, so the readout follows the archetype
+    // instead of hard-coding which enemy is the boss.
+    const boss = this.state.enemies.find(
+      (e) => e.roomId === this.state.roomId && archetypeFor(e.kind)?.respawns === false,
+    )
+    const bossLine = boss ? `\n${boss.alive ? bossBar(boss) : 'NIGHTBORNE  [SLAIN]'}` : ''
+
     this.hud.textContent =
       `${this.state.roomId}   ${ability}   hp ${this.state.hp}/${PLAYER_MAX_HP}` +
-      `${this.state.reachedGoal ? '   — GOAL' : ''}\n` +
+      `${this.state.reachedGoal ? '   — GOAL' : ''}${bossLine}\n` +
       `← → move    space jump    x attack    r respawn`
     // Flash the readout red on the frame the player is hit.
     this.hud.style.color = this.state.hurtTimer > 0 ? '#ff6b6b' : ''
@@ -545,6 +634,12 @@ export class PlayScene extends Phaser.Scene {
 
     for (const enemy of this.state.enemies) {
       const inRoom = enemy.roomId === this.state.roomId
+      // Art and box both come from the archetype, so a boss is drawn at the size
+      // its collider claims. Two sources for that would let them disagree, and
+      // the visible symptom would be hits that look like misses.
+      const set = spriteSetFor(enemy.kind)
+      const scale = archetypeFor(enemy.kind)?.scale ?? 1
+      const deathRole = set.roles.death
       const sprite = this.enemySprites.get(enemy.id)
 
       if (!inRoom) {
@@ -556,11 +651,14 @@ export class PlayScene extends Phaser.Scene {
       if (!live) {
         // Bind the handler to a const: the closure outlives this iteration, and
         // `live` is reassignable, so TypeScript cannot narrow it there.
-        const created = this.add.sprite(enemy.pos.x, enemy.pos.y, `${ENEMY.id}-idle`)
-        created.setOrigin(0.5, ENEMY.footOrigin)
+        const created = this.add.sprite(enemy.pos.x, enemy.pos.y, `${set.id}-${set.roles.idle}`)
+        created.setOrigin(0.5, set.footOrigin)
+        created.setScale(scale)
         created.setDepth(2)
         created.on('animationcomplete', (anim: Phaser.Animations.Animation) => {
-          if (anim.key === `${ENEMY.id}-death`) created.setVisible(false)
+          if (deathRole !== undefined && anim.key === `${set.id}-${deathRole}`) {
+            created.setVisible(false)
+          }
         })
         this.enemySprites.set(enemy.id, created)
         live = created
@@ -568,14 +666,16 @@ export class PlayScene extends Phaser.Scene {
 
       if (enemy.alive) {
         live.setVisible(true)
-        const nudge = enemy.dir === 1 ? ENEMY.xNudge : -ENEMY.xNudge
+        // The nudge is authored in frame pixels, so it scales with the sprite.
+        const nudge = (enemy.dir === 1 ? set.xNudge : -set.xNudge) * scale
         live.setPosition(enemy.pos.x + nudge, enemy.pos.y)
         live.setFlipX(enemy.dir === -1)
 
         const current = live.anims.currentAnim?.key
-        const attackKey = `${ENEMY.id}-attack`
-        const hitKey = `${ENEMY.id}-hit`
-        const walkKey = `${ENEMY.id}-walk`
+        const attackKey = `${set.id}-${set.roles.attack}`
+        const hurtKey = `${set.id}-${set.roles.hurt}`
+        const moveKey = `${set.id}-${set.roles.move}`
+        const idleKey = `${set.id}-${set.roles.idle}`
 
         // Rising edges: a new attack restarts the swing strip, a new wound
         // restarts the recoil strip.
@@ -583,13 +683,20 @@ export class PlayScene extends Phaser.Scene {
         this.prevEnemyAttack.set(enemy.id, enemy.attackTimer)
         if (attackStarted) live.play(attackKey, true)
 
-        const hitStarted = enemy.hitCooldown > (this.prevEnemyHit.get(enemy.id) ?? 0)
+        const hurtStarted = enemy.hitCooldown > (this.prevEnemyHit.get(enemy.id) ?? 0)
         this.prevEnemyHit.set(enemy.id, enemy.hitCooldown)
-        if (hitStarted) live.play(hitKey, true)
+        if (hurtStarted) live.play(hurtKey, true)
 
-        const hitPlaying = current === hitKey && live.anims.isPlaying
-        const busy = enemy.attackTimer > 0 || hitPlaying
-        if (!busy && current !== walkKey) live.play(walkKey)
+        const hurtPlaying = current === hurtKey && live.anims.isPlaying
+        const busy = enemy.attackTimer > 0 || hurtPlaying
+        if (!busy) {
+          // Moving plays the locomotion strip; standing falls back to idle. A
+          // boss spends real time standing still while it decides, and holding
+          // the run strip through that reads as moonwalking on the spot.
+          const moving = Math.abs(enemy.vel.x) > RUN_ANIM_THRESHOLD
+          const want = moving ? moveKey : idleKey
+          if (current !== want) live.play(want)
+        }
 
         // Flash white for exactly the ticks the hitbox is live. This is the
         // moment that matters: the wind-up animation says "something is coming",
@@ -615,7 +722,9 @@ export class PlayScene extends Phaser.Scene {
           const progress = Math.min(1, Math.max(0, elapsed / ENEMY_WINDUP_TICKS))
           const radius = 1.5 + progress * 3.5
           const cx = enemy.pos.x
-          const cy = enemy.pos.y - PLAYER_H - 10
+          // Above *its* head, not the player's: a boss is twice the height, and
+          // the marker inside its own body is not a warning.
+          const cy = enemy.pos.y - enemy.h - 10
           this.telegraph.fillStyle(0xffd166, 0.55 + progress * 0.45)
           this.telegraph.fillCircle(cx, cy, radius)
           this.telegraph.lineStyle(1, 0x7a3a12, 0.8)
@@ -623,7 +732,10 @@ export class PlayScene extends Phaser.Scene {
         }
       } else {
         live.clearTint()
-        if (live.anims.currentAnim?.key !== `${ENEMY.id}-death`) live.play(`${ENEMY.id}-death`)
+        if (deathRole !== undefined) {
+          const deathKey = `${set.id}-${deathRole}`
+          if (live.anims.currentAnim?.key !== deathKey) live.play(deathKey)
+        }
       }
     }
   }
