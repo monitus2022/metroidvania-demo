@@ -15,6 +15,7 @@ import { floorTopY, isSolid } from '../sim/tiles'
 import { PARALLAX } from './parallax'
 import { PROP_STYLES } from './props'
 import { CURRENT } from './sprites'
+import { TERRAIN } from './terrain'
 
 /** Diagnostic view of the sprite, so anchoring can be asserted exactly. */
 export interface SpriteInfo {
@@ -74,6 +75,7 @@ export class PlayScene extends Phaser.Scene {
   private hud!: HTMLDivElement
   private parallax: { ts: Phaser.GameObjects.TileSprite; layer: (typeof PARALLAX)[number]; texH: number }[] = []
   private propSprites: Phaser.GameObjects.Sprite[] = []
+  private surfaceTiles: Phaser.GameObjects.TileSprite[] = []
   private terrain!: Phaser.GameObjects.Graphics
   private props!: Phaser.GameObjects.Graphics
   private box!: Phaser.GameObjects.Graphics
@@ -99,6 +101,7 @@ export class PlayScene extends Phaser.Scene {
       })
     }
     for (const layer of PARALLAX) this.load.image(layer.key, layer.url)
+    this.load.image(TERRAIN.key, TERRAIN.url)
     for (const [kind, style] of Object.entries(PROP_STYLES)) {
       this.load.spritesheet(`prop-${kind}`, style.url, {
         frameWidth: style.frameWidth,
@@ -129,6 +132,13 @@ export class PlayScene extends Phaser.Scene {
         frameRate: style.frameRate,
         repeat: -1,
       })
+    }
+
+    // Cut the terrain atlas into named frames; the pack is not grid-aligned, so
+    // a uniform spritesheet slice would not work.
+    const terrainTexture = this.textures.get(TERRAIN.key)
+    for (const [name, frame] of Object.entries(TERRAIN.frames)) {
+      terrainTexture.add(name, 0, frame.x, frame.y, frame.width, frame.height)
     }
 
     this.buildParallax()
@@ -299,19 +309,48 @@ export class PlayScene extends Phaser.Scene {
     this.terrain.clear()
     this.props.clear()
 
-    this.terrain.fillStyle(0x1b2530, 1)
+    // Ground body: flat dirt. A single colour in the source art, so it is a
+    // fill rather than a tiled sprite.
+    this.terrain.fillStyle(TERRAIN.bodyColor, 1)
     for (let row = 0; row < grid.h; row++) {
       for (let col = 0; col < grid.w; col++) {
         if (isSolid(grid, col, row)) this.terrain.fillRect(col * TILE, row * TILE, TILE, TILE)
       }
     }
-    // Highlight the walkable top edge of every solid run.
-    this.terrain.lineStyle(1, 0x38a3c4, 0.55)
+
+    // Ground surface: the sand-capped strip, on every solid cell with air above
+    // it. Emitted per contiguous run so a 20-tile floor is one sprite rather
+    // than twenty.
+    for (const sprite of this.surfaceTiles) sprite.destroy()
+    this.surfaceTiles = []
     for (let row = 0; row < grid.h; row++) {
-      for (let col = 0; col < grid.w; col++) {
-        if (isSolid(grid, col, row) && !isSolid(grid, col, row - 1)) {
-          this.terrain.lineBetween(col * TILE, row * TILE, (col + 1) * TILE, row * TILE)
+      let col = 0
+      while (col < grid.w) {
+        const isSurface = isSolid(grid, col, row) && !isSolid(grid, col, row - 1)
+        if (!isSurface) {
+          col++
+          continue
         }
+        let end = col
+        while (
+          end + 1 < grid.w &&
+          isSolid(grid, end + 1, row) &&
+          !isSolid(grid, end + 1, row - 1)
+        ) {
+          end++
+        }
+        const sprite = this.add.tileSprite(
+          col * TILE,
+          row * TILE,
+          (end - col + 1) * TILE,
+          TILE,
+          TERRAIN.key,
+          'surface',
+        )
+        sprite.setOrigin(0, 0)
+        sprite.setDepth(0.5)
+        this.surfaceTiles.push(sprite)
+        col = end + 1
       }
     }
 
