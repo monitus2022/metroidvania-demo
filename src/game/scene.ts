@@ -1,11 +1,19 @@
 import Phaser from 'phaser'
-import { FIXED_DT, PLAYER_H, PLAYER_W, TILE } from '../sim/constants'
+import {
+  DOOR_ARRIVAL_INSET,
+  FIXED_DT,
+  PLAYER_H,
+  PLAYER_W,
+  TILE,
+  TRANSITION_LOCK_TICKS,
+} from '../sim/constants'
 import { BTN, type InputMask } from '../sim/input'
 import { GAME_MAP } from '../sim/levels'
 import { createInitialState, gridOf, hasAbility, isDoorOpen, respawn, step } from '../sim/step'
 import type { WorldState } from '../sim/state'
 import { floorTopY, isSolid } from '../sim/tiles'
 import { PARALLAX } from './parallax'
+import { PROP_STYLES } from './props'
 import { CURRENT } from './sprites'
 
 /** Diagnostic view of the sprite, so anchoring can be asserted exactly. */
@@ -33,6 +41,14 @@ declare global {
       tickCount: () => number
       roomId: () => string
       spriteInfo: () => SpriteInfo
+      /**
+       * Test hook: drop the player into another room at its entry cell without
+       * playing the route there. Touches no abilities or pickups, so it can be
+       * used for visual checks but cannot fake progression.
+       */
+      gotoRoom: (roomId: string, atCol?: number) => boolean
+      /** Prop positions in the current room, for asserting scenery placement. */
+      propInfo: () => { id: string; kind: string; x: number; y: number; anim: string | null }[]
     }
   }
 }
@@ -57,6 +73,7 @@ export class PlayScene extends Phaser.Scene {
 
   private hud!: HTMLDivElement
   private parallax: { ts: Phaser.GameObjects.TileSprite; layer: (typeof PARALLAX)[number]; texH: number }[] = []
+  private propSprites: Phaser.GameObjects.Sprite[] = []
   private terrain!: Phaser.GameObjects.Graphics
   private props!: Phaser.GameObjects.Graphics
   private box!: Phaser.GameObjects.Graphics
@@ -82,6 +99,12 @@ export class PlayScene extends Phaser.Scene {
       })
     }
     for (const layer of PARALLAX) this.load.image(layer.key, layer.url)
+    for (const [kind, style] of Object.entries(PROP_STYLES)) {
+      this.load.spritesheet(`prop-${kind}`, style.url, {
+        frameWidth: style.frameWidth,
+        frameHeight: style.frameHeight,
+      })
+    }
   }
 
   create(): void {
@@ -97,6 +120,17 @@ export class PlayScene extends Phaser.Scene {
       })
     }
 
+    for (const [kind, style] of Object.entries(PROP_STYLES)) {
+      const key = `prop-${kind}`
+      if (style.frameRate <= 0 || this.anims.exists(key)) continue
+      this.anims.create({
+        key,
+        frames: this.anims.generateFrameNumbers(key, { start: 0, end: style.frames - 1 }),
+        frameRate: style.frameRate,
+        repeat: -1,
+      })
+    }
+
     this.buildParallax()
     this.terrain = this.add.graphics()
     this.props = this.add.graphics()
@@ -107,6 +141,13 @@ export class PlayScene extends Phaser.Scene {
     // of transparent padding below the feet, so origin y = 1 would float the
     // character a full tile above the ground.
     this.player.setOrigin(0.5, CURRENT.footOrigin)
+
+    // Explicit depths: props are sprites now, so creation order alone would let
+    // a prop drawn after the player cover her.
+    this.terrain.setDepth(0)
+    this.props.setDepth(1)
+    this.box.setDepth(2)
+    this.player.setDepth(3)
 
     this.createHud()
 
@@ -148,6 +189,48 @@ export class PlayScene extends Phaser.Scene {
         posX: this.state.player.pos.x,
         posY: this.state.player.pos.y,
       }),
+      gotoRoom: (roomId: string, atCol?: number) => {
+        const room = this.state.map.rooms[roomId]
+        if (!room) return false
+        // A room whose entry cell is also its return door (the spire) would
+        // bounce straight back out, so mirror what a real door transition does
+        // and step inward off the door tile.
+        const onDoor = room.doors.some((d) => d.col === room.entry.col && d.row === room.entry.row)
+        const inward = room.entry.col < room.grid.w / 2 ? 1 : -1
+        const spawnCol =
+          atCol ?? (onDoor ? room.entry.col + inward * DOOR_ARRIVAL_INSET : room.entry.col)
+        this.state = {
+          ...this.state,
+          roomId,
+          player: {
+            ...this.state.player,
+            pos: {
+              x: Math.min(room.grid.w - 1, Math.max(0, spawnCol)) * TILE + TILE / 2,
+              y: (room.entry.row + 1) * TILE,
+            },
+            vel: { x: 0, y: 0 },
+            onGround: true,
+            airJumpsUsed: 0,
+            coyoteTimer: 0,
+            jumpBufferTimer: 0,
+          },
+          // Same lock `createInitialState` uses. Without it, a room whose entry
+          // cell is also its return door — the spire — bounces you straight back
+          // out on the next tick.
+          transitionLock: TRANSITION_LOCK_TICKS,
+        }
+        this.drawRoom()
+        this.syncView()
+        return true
+      },
+      propInfo: () =>
+        this.propSprites.map((sprite, i) => ({
+          id: this.state.map.rooms[this.state.roomId]!.props[i]?.id ?? '',
+          kind: this.state.map.rooms[this.state.roomId]!.props[i]?.kind ?? '',
+          x: sprite.x,
+          y: sprite.y,
+          anim: sprite.anims.currentAnim?.key ?? null,
+        })),
     }
   }
 
@@ -263,6 +346,22 @@ export class PlayScene extends Phaser.Scene {
       ts.setPosition(0, 0)
       const offset = layer.opaqueFrom - floorY
       ts.tilePositionY = Math.max(0, Math.min(Math.max(0, texH - roomH), offset))
+    }
+
+    // Scenery. Sprites rather than Graphics, so they are destroyed and rebuilt
+    // whenever the room drawing is invalidated. Anchored to the bottom of their
+    // cell, which puts them on whatever ground is below.
+    for (const sprite of this.propSprites) sprite.destroy()
+    this.propSprites = []
+    for (const prop of room.props) {
+      const style = PROP_STYLES[prop.kind]
+      if (!style) continue
+      const key = `prop-${prop.kind}`
+      const sprite = this.add.sprite(prop.col * TILE + TILE / 2, (prop.row + 1) * TILE, key, 0)
+      sprite.setOrigin(style.originX, style.originY)
+      sprite.setDepth(1)
+      if (style.frameRate > 0 && this.anims.exists(key)) sprite.play(key)
+      this.propSprites.push(sprite)
     }
 
     this.drawnKey = this.viewKey()
