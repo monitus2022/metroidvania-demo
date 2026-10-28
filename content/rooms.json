@@ -1,0 +1,105 @@
+{
+  "startRoom": "atrium",
+  "goal": { "room": "spire", "col": 16, "row": 5 },
+  "rooms": [
+    {
+      "id": "atrium",
+      "comment": "Start. Teaches walking. 20x12, flat floor. The east door returns from the gallery.",
+      "entry": { "col": 2, "row": 9 },
+      "rows": [
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "####################",
+        "####################"
+      ],
+      "doors": [
+        {
+          "id": "atrium-to-gallery",
+          "col": 19,
+          "row": 9,
+          "to": "gallery",
+          "toCol": 0,
+          "toRow": 9
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "gallery",
+      "comment": "doubleJump on the floor; the east door sits on a ledge 4 tiles up. West door walks back to the atrium.",
+      "entry": { "col": 0, "row": 9 },
+      "rows": [
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "...............#####",
+        "...............#####",
+        "....................",
+        "....................",
+        "####################",
+        "####################"
+      ],
+      "doors": [
+        {
+          "id": "gallery-to-atrium",
+          "col": 0,
+          "row": 9,
+          "to": "atrium",
+          "toCol": 19,
+          "toRow": 9
+        },
+        {
+          "id": "gallery-to-spire",
+          "col": 19,
+          "row": 5,
+          "to": "spire",
+          "toCol": 0,
+          "toRow": 5,
+          "gate": "gate-to-spire"
+        }
+      ],
+      "items": [{ "id": "gallery-double-jump", "ability": "doubleJump", "col": 4, "row": 9 }]
+    },
+    {
+      "id": "spire",
+      "comment": "Goal room. A 5-tile pit separates the entry ledge from the goal ledge. West door walks back to the gallery.",
+      "entry": { "col": 0, "row": 5 },
+      "rows": [
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "....................",
+        "#####.....##########",
+        "#####.....##########",
+        "....................",
+        "....................",
+        "####################",
+        "####################"
+      ],
+      "doors": [
+        {
+          "id": "spire-to-gallery",
+          "col": 0,
+          "row": 5,
+          "to": "gallery",
+          "toCol": 19,
+          "toRow": 5
+        }
+      ],
+      "items": []
+    }
+  ]
+}
