@@ -59,9 +59,11 @@ Wired as of M4. One enemy type, `enraged`, with a deliberately small verb set:
 - **Patrol** — walks `patrol` tiles either side of its spawn column and turns at
   walls, ledges and its patrol bounds. Ledges matter: an enemy that did not turn
   at them would walk off the platform it was placed on.
-- **Contact damage** — touching the player costs one hit point, then the player
-  gets 1.5s of invulnerability so a single collision is a single hit.
-- **Hit and death** — two hits kill it; one swing is one hit (a per-enemy
+- **Contact damage** — none. Touching an enemy is free; only its attack hurts.
+- **Attack** — three phases: a wind-up it is rooted for (with a charge dot above
+  its head), an active window that lunges and can hurt, then a recovery it is
+  committed to. Only the active window damages.
+- **Hit and death** — **one hit kills it**, and one swing is one hit (a per-enemy
   immunity window, or the 12-tick hitbox would deal 12 damage).
 - **Respawn** — 4 seconds later, at its spawn.
 

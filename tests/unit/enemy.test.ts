@@ -4,6 +4,7 @@ import {
   ATTACK_COOLDOWN_TICKS,
   ATTACK_TICKS,
   ENEMY_ACTIVE_TICKS,
+  ENEMY_HIT_COOLDOWN,
   ENEMY_HP,
   ENEMY_RESPAWN_TICKS,
   ENEMY_WINDUP_TICKS,
@@ -188,6 +189,21 @@ describe('enemy: attacks are telegraphed', () => {
 })
 
 describe('enemy: the swing', () => {
+  it('dies to a single swing', () => {
+    let s = enemyInFront(createInitialState(enemyRoom()), 20)
+    s = step(s, BTN.ATTACK)
+    s = run(s, BTN.ATTACK, ATTACK_TICKS + 2)
+    expect(s.enemies[0]!.alive).toBe(false)
+    expect(s.enemies[0]!.hp).toBe(0)
+  })
+
+  it('keeps the attack cadence faster than the enemy damage immunity', () => {
+    // The trap this pins down: immunity longer than the player's attack
+    // cooldown means every second swing is absorbed with no feedback at all.
+    // It was exactly that (30 vs 24) until enemies went to one hit point.
+    expect(ENEMY_HIT_COOLDOWN).toBeLessThanOrEqual(ATTACK_COOLDOWN_TICKS)
+  })
+
   it('lands exactly once per swing', () => {
     // The bug this exists to prevent: a 12-tick hitbox window that damages every
     // tick deals 12 damage, and no enemy survives a single swing.
