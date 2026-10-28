@@ -1,5 +1,5 @@
 import { MAX_SUBSTEP, PLAYER_H, PLAYER_W, TILE } from './constants'
-import type { PlayerState } from './state'
+import type { Body } from './state'
 import { isSolid, type TileGrid } from './tiles'
 
 const HALF_W = PLAYER_W / 2
@@ -18,7 +18,7 @@ const OVERLAP_EPS = 1e-3
  * Sub-steps so that a large per-tick delta can never tunnel through a wall.
  * Returns true if the movement was blocked.
  */
-export function moveX(p: PlayerState, grid: TileGrid, dx: number): boolean {
+export function moveX(p: Body, grid: TileGrid, dx: number): boolean {
   if (dx === 0) return false
   const steps = Math.max(1, Math.ceil(Math.abs(dx) / MAX_SUBSTEP))
   const stepDx = dx / steps
@@ -29,7 +29,7 @@ export function moveX(p: PlayerState, grid: TileGrid, dx: number): boolean {
   return false
 }
 
-function resolveX(p: PlayerState, grid: TileGrid, dirX: number): boolean {
+function resolveX(p: Body, grid: TileGrid, dirX: number): boolean {
   const col = dirX > 0 ? Math.floor((p.pos.x + HALF_W - EPS) / TILE) : Math.floor((p.pos.x - HALF_W) / TILE)
   const rowStart = Math.floor((p.pos.y - PLAYER_H) / TILE)
   const rowEnd = Math.floor((p.pos.y - EPS) / TILE)
@@ -48,7 +48,7 @@ function resolveX(p: PlayerState, grid: TileGrid, dirX: number): boolean {
  * Move vertically and resolve against solid tiles.
  * Returns true if the body landed on a surface.
  */
-export function moveY(p: PlayerState, grid: TileGrid, dy: number): boolean {
+export function moveY(p: Body, grid: TileGrid, dy: number): boolean {
   if (dy === 0) return false
   const steps = Math.max(1, Math.ceil(Math.abs(dy) / MAX_SUBSTEP))
   const stepDy = dy / steps
@@ -59,7 +59,7 @@ export function moveY(p: PlayerState, grid: TileGrid, dy: number): boolean {
   return false
 }
 
-function resolveY(p: PlayerState, grid: TileGrid, dirY: number): boolean {
+function resolveY(p: Body, grid: TileGrid, dirY: number): boolean {
   const colStart = Math.floor((p.pos.x - HALF_W + EPS) / TILE)
   const colEnd = Math.floor((p.pos.x + HALF_W - EPS) / TILE)
   const row = dirY > 0 ? Math.floor((p.pos.y - EPS) / TILE) : Math.floor((p.pos.y - PLAYER_H) / TILE)
@@ -87,7 +87,7 @@ function resolveY(p: PlayerState, grid: TileGrid, dirY: number): boolean {
  * inside the wall face, so a probe at the body edge lands in the wall tile while
  * a probe exactly on the edge would be ambiguous.
  */
-export function touchingWall(p: PlayerState, grid: TileGrid): -1 | 0 | 1 {
+export function touchingWall(p: Body, grid: TileGrid): -1 | 0 | 1 {
   const rowStart = Math.floor((p.pos.y - PLAYER_H) / TILE)
   const rowEnd = Math.floor((p.pos.y - EPS) / TILE)
   const solidInColumn = (col: number): boolean => {
@@ -100,6 +100,40 @@ export function touchingWall(p: PlayerState, grid: TileGrid): -1 | 0 | 1 {
 }
 
 /**
+ * Do two axis-aligned boxes overlap? Used for combat hitboxes, where a body's
+ * box is its feet position expanded left by half width and up by full height.
+ */
+export function boxesOverlap(
+  ax: number,
+  ay: number,
+  aw: number,
+  ah: number,
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number,
+): boolean {
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
+}
+
+/** The box of a body standing at `pos` (feet at pos.y, centred on pos.x). */
+export function bodyBox(pos: { x: number; y: number }): {
+  x: number
+  y: number
+  w: number
+  h: number
+} {
+  return { x: pos.x - HALF_W, y: pos.y - PLAYER_H, w: PLAYER_W, h: PLAYER_H }
+}
+
+/** Do two bodies overlap? Uses each body's full collider box. */
+export function bodiesOverlap(a: Body, b: Body): boolean {
+  const A = bodyBox(a.pos)
+  const B = bodyBox(b.pos)
+  return boxesOverlap(A.x, A.y, A.w, A.h, B.x, B.y, B.w, B.h)
+}
+
+/**
  * Invariant checker used by the fuzzer and by unit tests: returns the first
  * solid tile the body is genuinely penetrating, or null.
  *
@@ -107,7 +141,7 @@ export function touchingWall(p: PlayerState, grid: TileGrid): -1 | 0 | 1 {
  * a checkable property rather than a hope.
  */
 export function overlapsSolid(
-  p: PlayerState,
+  p: Body,
   grid: TileGrid,
 ): { col: number; row: number } | null {
   const left = p.pos.x - HALF_W + OVERLAP_EPS

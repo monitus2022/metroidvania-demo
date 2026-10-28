@@ -1,9 +1,16 @@
 import {
   AIR_ACCEL_FACTOR,
   AIR_FRICTION,
+  ATTACK_COOLDOWN_TICKS,
+  ATTACK_REACH,
+  ATTACK_TICKS,
   COYOTE_TIME,
   DOOR_ARRIVAL_INSET,
   DOUBLE_JUMP_VELOCITY,
+  ENEMY_HIT_COOLDOWN,
+  ENEMY_HP,
+  ENEMY_RESPAWN_TICKS,
+  ENEMY_SPEED,
   FIXED_DT,
   GRAVITY,
   GROUND_FRICTION,
@@ -13,6 +20,8 @@ import {
   MAX_AIR_JUMPS,
   MAX_FALL,
   PLAYER_H,
+  PLAYER_INVULN_TICKS,
+  PLAYER_MAX_HP,
   PLAYER_W,
   RUN_ACCEL,
   RUN_MAX,
@@ -21,11 +30,11 @@ import {
   WALL_CLIMB_SPEED,
   WALL_SLIDE_SPEED,
 } from './constants'
-import { moveX, moveY, touchingWall } from './collision'
+import { bodiesOverlap, bodyBox, boxesOverlap, moveX, moveY, touchingWall } from './collision'
 import type { DoorDef, GameMap } from './content'
 import { BTN, axisX, held, type InputMask } from './input'
-import type { PlayerState, WorldState } from './state'
-import type { TileGrid } from './tiles'
+import type { EnemyState, PlayerState, WorldState } from './state'
+import { isSolid, type TileGrid } from './tiles'
 
 export const gridOf = (s: WorldState): TileGrid => s.map.rooms[s.roomId]!.grid
 
@@ -65,6 +74,37 @@ function freshPlayer(map: GameMap, roomId: string): PlayerState {
   }
 }
 
+/**
+ * Build every enemy in the level, in content order.
+ *
+ * All of them exist in the state from tick 0, including the ones in rooms the
+ * player has not reached: the order is what makes the state hash stable, and a
+ * frozen-but-present enemy is simpler to reason about than one conjured on entry.
+ * `step` still only moves the ones in the current room.
+ */
+export function freshEnemies(map: GameMap): EnemyState[] {
+  const out: EnemyState[] = []
+  for (const roomId of map.order) {
+    for (const enemy of map.rooms[roomId]!.enemies) {
+      const spawn = { x: enemy.col * TILE + TILE / 2, y: (enemy.row + 1) * TILE }
+      out.push({
+        id: enemy.id,
+        roomId,
+        spawn,
+        patrol: enemy.patrol,
+        pos: { ...spawn },
+        vel: { x: 0, y: 0 },
+        dir: -1,
+        hp: ENEMY_HP,
+        alive: true,
+        respawnTimer: 0,
+        hitCooldown: 0,
+      })
+    }
+  }
+  return out
+}
+
 export function createInitialState(map: GameMap, seed = 1234): WorldState {
   return {
     map,
@@ -77,6 +117,11 @@ export function createInitialState(map: GameMap, seed = 1234): WorldState {
     prevInput: 0,
     transitionLock: 0,
     reachedGoal: false,
+    enemies: freshEnemies(map),
+    hp: PLAYER_MAX_HP,
+    invulnTimer: 0,
+    attackTimer: 0,
+    attackCooldown: 0,
   }
 }
 
@@ -86,7 +131,70 @@ export function respawn(state: WorldState): WorldState {
     ...state,
     player: freshPlayer(state.map, state.roomId),
     transitionLock: TRANSITION_LOCK_TICKS,
+    hp: PLAYER_MAX_HP,
+    invulnTimer: PLAYER_INVULN_TICKS,
+    attackTimer: 0,
+    attackCooldown: 0,
+    // Death resets the world's enemies, not just the current room's. Cleared
+    // rooms refilling on death is the classic behaviour and keeps it simple.
+    enemies: freshEnemies(state.map),
   }
+}
+
+/** The area a swing covers this tick: a box in front of the player. */
+function swingBox(p: PlayerState): { x: number; y: number; w: number; h: number } {
+  const body = bodyBox(p.pos)
+  return {
+    x: p.facing === 1 ? body.x + body.w : body.x - ATTACK_REACH,
+    y: body.y,
+    w: ATTACK_REACH,
+    h: body.h,
+  }
+}
+
+/**
+ * Move one enemy: walk, turn at walls / ledges / patrol bounds, fall.
+ *
+ * Deliberately turns at ledges rather than walking off them, so an enemy can
+ * never leave the platform it was placed on and end up somewhere unreachable or
+ * out of the room.
+ */
+function stepEnemy(e: EnemyState, grid: TileGrid, dt: number): void {
+  if (e.hitCooldown > 0) e.hitCooldown -= 1
+
+  if (!e.alive) {
+    e.respawnTimer -= 1
+    if (e.respawnTimer <= 0) {
+      e.alive = true
+      e.hp = ENEMY_HP
+      e.pos = { ...e.spawn }
+      e.vel = { x: 0, y: 0 }
+      e.respawnTimer = 0
+    }
+    return
+  }
+
+  e.vel.y = Math.min(MAX_FALL, e.vel.y + GRAVITY * dt)
+  e.vel.x = e.dir * ENEMY_SPEED
+
+  const blocked = moveX(e, grid, e.vel.x * dt)
+  moveY(e, grid, e.vel.y * dt)
+  const turn = (): void => {
+    e.dir = e.dir === 1 ? -1 : 1
+  }
+  if (blocked) turn()
+
+  // No floor ahead: turn rather than walk off.
+  const aheadCol = Math.floor((e.pos.x + e.dir * (PLAYER_W / 2 + 2)) / TILE)
+  const belowRow = Math.floor((e.pos.y + 1) / TILE)
+  if (!isSolid(grid, aheadCol, belowRow)) turn()
+
+  // Stay within the declared patrol range. Checked after the flip so a turn at
+  // a patrol bound cannot be undone by the ledge check on the same tick.
+  const min = e.spawn.x - e.patrol * TILE
+  const max = e.spawn.x + e.patrol * TILE
+  if (e.pos.x <= min) e.dir = 1
+  else if (e.pos.x >= max) e.dir = -1
 }
 
 /**
@@ -106,6 +214,10 @@ export function step(state: WorldState, input: InputMask, dt: number = FIXED_DT)
     prevInput: input,
     transitionLock: Math.max(0, state.transitionLock - 1),
     player: { ...p, pos: { ...p.pos }, vel: { ...p.vel } },
+    // Deep-copied for the same reason as the player: `stepEnemy` mutates in
+    // place, and a shared array would corrupt the state this one came from,
+    // which is exactly what the replay determinism test would catch.
+    enemies: state.enemies.map((e) => ({ ...e, pos: { ...e.pos }, vel: { ...e.vel } })),
   }
   const pl = next.player
 
@@ -172,6 +284,71 @@ export function step(state: WorldState, input: InputMask, dt: number = FIXED_DT)
   // --- coyote grace and mid-air jump budget ---
   pl.coyoteTimer = pl.onGround ? COYOTE_TIME : Math.max(0, pl.coyoteTimer - dt)
   if (pl.onGround) pl.airJumpsUsed = 0
+
+  // --- attack: press edge only, so holding the button cannot spam it ---
+  next.attackCooldown = Math.max(0, next.attackCooldown - 1)
+  if (next.attackTimer > 0) next.attackTimer -= 1
+  const attackPressed = held(input, BTN.ATTACK) && !held(state.prevInput, BTN.ATTACK)
+  if (attackPressed && next.attackCooldown === 0) {
+    next.attackTimer = ATTACK_TICKS
+    next.attackCooldown = ATTACK_COOLDOWN_TICKS
+  }
+
+  // --- enemies ---
+  const grid = gridOf(next)
+  for (const enemy of next.enemies) {
+    if (enemy.roomId === next.roomId) {
+      stepEnemy(enemy, grid, dt)
+    } else if (!enemy.alive) {
+      // Out of the room: frozen in place, but the respawn clock keeps running, so
+      // a room you cleared is repopulated whether or not you are standing in it.
+      enemy.respawnTimer -= 1
+      if (enemy.respawnTimer <= 0) {
+        enemy.alive = true
+        enemy.hp = ENEMY_HP
+        enemy.pos = { ...enemy.spawn }
+        enemy.respawnTimer = 0
+      }
+    }
+  }
+
+  // --- the swing lands ---
+  // Applied after enemies move, so the hitbox tests where they actually are.
+  if (next.attackTimer > 0) {
+    const swing = swingBox(pl)
+    for (const enemy of next.enemies) {
+      if (!enemy.alive || enemy.roomId !== next.roomId || enemy.hitCooldown > 0) continue
+      const box = bodyBox(enemy.pos)
+      if (!boxesOverlap(swing.x, swing.y, swing.w, swing.h, box.x, box.y, box.w, box.h)) continue
+      // Per-enemy immunity is what makes one swing one hit — without it the
+      // 12-tick window would deal 12 damage and no enemy could survive.
+      enemy.hitCooldown = ENEMY_HIT_COOLDOWN
+      enemy.hp -= 1
+      if (enemy.hp <= 0) {
+        enemy.alive = false
+        enemy.hp = 0
+        enemy.vel = { x: 0, y: 0 }
+        enemy.respawnTimer = ENEMY_RESPAWN_TICKS
+      }
+    }
+  }
+
+  // --- contact damage ---
+  next.invulnTimer = Math.max(0, next.invulnTimer - 1)
+  if (next.invulnTimer === 0) {
+    for (const enemy of next.enemies) {
+      if (!enemy.alive || enemy.roomId !== next.roomId) continue
+      if (!bodiesOverlap(pl, enemy)) continue
+      next.hp -= 1
+      next.invulnTimer = PLAYER_INVULN_TICKS
+      break
+    }
+  }
+
+  // --- death ---
+  // Bail out here: the rest of the tick (items, doors, goal) is moot for a player
+  // who is being put back at the room entry.
+  if (next.hp <= 0) return respawn(next)
 
   // --- items ---
   for (const item of next.map.rooms[next.roomId]!.items) {

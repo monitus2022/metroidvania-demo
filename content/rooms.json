@@ -138,7 +138,11 @@
         }
       ],
       "items": [],
-      "props": []
+      "props": [],
+      "enemies": [
+        { "id": "shaft-husk-upper", "kind": "enraged", "col": 16, "row": 4, "patrol": 2 },
+        { "id": "shaft-husk-lower", "kind": "enraged", "col": 7, "row": 7, "patrol": 2 }
+      ]
     },
     {
       "id": "overlook",
@@ -271,7 +275,10 @@
         }
       ],
       "items": [],
-      "props": []
+      "props": [],
+      "enemies": [
+        { "id": "foundry-husk", "kind": "enraged", "col": 15, "row": 9, "patrol": 2 }
+      ]
     },
     {
       "id": "ascent",

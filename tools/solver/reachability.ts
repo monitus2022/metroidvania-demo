@@ -1,5 +1,5 @@
 import { isSolid, type TileGrid } from '../../src/sim/tiles'
-import { KNOWN_PROP_KINDS, type GameMap } from '../../src/sim/content'
+import { KNOWN_ENEMY_KINDS, KNOWN_PROP_KINDS, type GameMap } from '../../src/sim/content'
 
 /**
  * Reachability solver — Node only. No browser, no renderer, no engine.
@@ -84,6 +84,13 @@ export interface SolveResult {
   readonly beatable: boolean
   readonly errors: readonly string[]
   readonly warnings: readonly string[]
+  /**
+   * Rooms the solver cannot reason about: places where movement is verified but
+   * something outside the model — combat, for now — decides whether the player
+   * gets through. Distinct from `warnings`, which are content smells to fix; this
+   * is permanent until the model grows, so it must not fail a build.
+   */
+  readonly unverified: readonly string[]
   readonly abilities: readonly string[]
   readonly reachableRooms: readonly string[]
   readonly openedDoors: readonly string[]
@@ -276,6 +283,28 @@ function validate(map: GameMap, gates: Readonly<Record<string, string>>): string
         errors.push(`prop "${prop.id}" is inside solid terrain in "${roomId}"`)
       }
     }
+
+    // Enemies must stand on something. One placed over a pit falls out of the
+    // room on the first tick and is never seen again, which is silent in play.
+    for (const enemy of room.enemies) {
+      if (!KNOWN_ENEMY_KINDS.includes(enemy.kind as (typeof KNOWN_ENEMY_KINDS)[number])) {
+        errors.push(
+          `enemy "${enemy.id}" has unknown kind "${enemy.kind}" (known: ${KNOWN_ENEMY_KINDS.join(', ')})`,
+        )
+      }
+      if (enemy.patrol < 0) {
+        errors.push(`enemy "${enemy.id}" has negative patrol ${enemy.patrol}`)
+      }
+      if (enemy.col < 0 || enemy.col >= g.w || enemy.row < 0 || enemy.row >= g.h) {
+        errors.push(`enemy "${enemy.id}" is outside room "${roomId}"`)
+        continue
+      }
+      if (!isEmpty(g, enemy.col, enemy.row)) {
+        errors.push(`enemy "${enemy.id}" is inside solid terrain in "${roomId}"`)
+      } else if (!isSolid(g, enemy.col, enemy.row + 1)) {
+        errors.push(`enemy "${enemy.id}" has no ground under it in "${roomId}"`)
+      }
+    }
   }
 
   for (const gateId of Object.keys(gates)) {
@@ -305,6 +334,7 @@ export function solve(map: GameMap): SolveResult {
       openedDoors: [],
       blockedDoors: [],
       softlocks: [],
+      unverified: [],
     }
   }
 
@@ -392,10 +422,24 @@ export function solve(map: GameMap): SolveResult {
     }
   }
 
+  // Combat is outside the model. The solver answers "can the player reach this
+  // tile", not "can they survive the trip", so any room with an enemy is a place
+  // where "beatable" is an assumption rather than a result.
+  const unverified: string[] = []
+  for (const roomId of map.order) {
+    const count = map.rooms[roomId]!.enemies.length
+    if (count === 0) continue
+    unverified.push(
+      `room "${roomId}" places ${count} ${count === 1 ? 'enemy' : 'enemies'}: ` +
+        `movement is verified, combat is not`,
+    )
+  }
+
   return {
     beatable,
     errors,
     warnings,
+    unverified,
     abilities: [...abilities].sort(),
     reachableRooms: [...cells.keys()].sort(),
     openedDoors: [...opened].sort(),
