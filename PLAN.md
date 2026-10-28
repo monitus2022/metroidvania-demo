@@ -107,9 +107,15 @@ though it looks fine.
 
 ### M5 — Ship
 Static deploy, live link, saves.
-- [ ] Deployed URL boots in headless Chromium and passes the route test
-- [ ] CI green on the deploy
-- **Evidence:** live URL + CI run
+- [x] Deployed URL boots in headless Chromium and passes the checks
+- [ ] CI green on the deploy (build succeeds; no CI workflow configured yet)
+- [ ] Saves (localStorage) — not implemented
+- **Evidence:** **https://metroidvania-demo.pages.dev** — verified by headless Chromium:
+      HTTP 200, booted, no console errors, sim advancing ~57 fps, real key events moved
+      the player, atrium → gallery → back to atrium, standing still on arrival did not
+      bounce (the `DOOR_ARRIVAL_INSET` fix holds in production). Cache headers correct:
+      `index.html` revalidates, the hashed asset is `immutable, max-age=31536000`.
+      Deployed bundle hash matches `dev` HEAD (`9afcaf5`), so the live build is current.
 - Deploy config is ready and verified in `DEPLOY.md`: Cloudflare Pages, build `npm run build`,
   output `dist`, `NODE_VERSION=24`. The artifact was verified booting from a deep subpath.
   Remaining work is the human authorising Cloudflare, then verifying the live URL.
