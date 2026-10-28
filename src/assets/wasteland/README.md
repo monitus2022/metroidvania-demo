@@ -42,12 +42,26 @@ did exactly that and rendered a flat blue field with no mountains. Only
 the one whose opaque band starts low enough to hide behind the terrain. See
 `src/game/parallax.ts`.
 
-**Not vendored yet:** the main `TileSet_Wasteland.png` and the props
-(`Objects.png`, `Chest-Sheet.png`, `Flag-Sheet.png`). The main tileset is an art
-kit rather than an autotile sheet — connected-component analysis found **16
-discrete pieces at arbitrary offsets** (y = 16, 22, 23, 64, 80, 98, 104, 112;
-sizes such as 48x42, 47x35, 26x35), with only two single 16x16 tiles and no
-inner-corner or cap pieces. `load.spritesheet(frameWidth: 16)` would slice it
-into meaningless fragments; it needs explicit atlas rectangles, and it cannot
-autotile the boolean terrain grid in `content/rooms.json`. Bring it in when the
-room layouts have settled and there is a reason to hand-place pieces.
+`props/` — the flag (8 frames) and chest (6 frames) sheets.
+
+`terrain/terrain.png` — a **32x32, two-frame extract** of the main
+`TileSet_Wasteland.png`: the sand-capped ground surface and a flat dirt body
+tile. See `src/game/terrain.ts` for exactly which windows of the source art
+those are and why those windows were chosen.
+
+**Not vendored:** the full `TileSet_Wasteland.png` and `Objects.png`. The main
+tileset is an art kit rather than an autotile sheet — connected-component
+analysis found **16 discrete pieces at arbitrary offsets** (y = 16, 22, 23, 64,
+80, 98, 104, 112; sizes such as 48x42, 47x35, 26x35), with only two single 16x16
+tiles and no inner-corner or cap pieces. `load.spritesheet(frameWidth: 16)` would
+slice it into meaningless fragments.
+
+It happens to be enough for this demo anyway, because every solid mass in
+`content/rooms.json` is exactly two tiles thick with a flat top: one crust row
+plus one dirt row is the whole requirement. If rooms later need slopes,
+one-tile shelves or inner corners, those pieces exist (the two 32x32 slopes at
+y=64, the 16x24 slopes at y=104) but each needs its own explicit frame and a
+rule for when to use it.
+
+Worth knowing: piece 3 is a **ladder**, and `Objects.png` is a 27-piece atlas of
+trees, bushes and stones. Both are unwired.

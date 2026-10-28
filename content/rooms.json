@@ -30,7 +30,8 @@
           "toRow": 9
         }
       ],
-      "items": []
+      "items": [],
+      "props": [{ "id": "atrium-chest", "kind": "chest", "col": 6, "row": 9 }]
     },
     {
       "id": "gallery",
@@ -69,7 +70,8 @@
           "gate": "gate-to-spire"
         }
       ],
-      "items": [{ "id": "gallery-double-jump", "ability": "doubleJump", "col": 4, "row": 9 }]
+      "items": [{ "id": "gallery-double-jump", "ability": "doubleJump", "col": 4, "row": 9 }],
+      "props": []
     },
     {
       "id": "spire",
@@ -99,7 +101,8 @@
           "toRow": 5
         }
       ],
-      "items": []
+      "items": [],
+      "props": [{ "id": "spire-goal-flag", "kind": "flag", "col": 16, "row": 5 }]
     }
   ]
 }

@@ -38,6 +38,20 @@ export interface ItemDef {
   readonly row: number
 }
 
+/**
+ * Non-colliding scenery. Drawn at a cell, anchored to the bottom of it, so a
+ * prop sits on whatever ground is there. Purely visual: the sim never sees it.
+ */
+export interface PropDef {
+  readonly id: string
+  readonly kind: string
+  readonly col: number
+  readonly row: number
+}
+
+/** Prop kinds the renderer can draw. Content may not invent new ones. */
+export const KNOWN_PROP_KINDS = ['flag', 'chest'] as const
+
 export interface RoomDef {
   readonly id: string
   readonly grid: TileGrid
@@ -45,6 +59,7 @@ export interface RoomDef {
   readonly entry: CellDef
   readonly doors: readonly DoorDef[]
   readonly items: readonly ItemDef[]
+  readonly props: readonly PropDef[]
 }
 
 export interface GoalDef {
@@ -74,6 +89,7 @@ export interface RoomsFile {
     readonly rows: readonly string[]
     readonly doors?: readonly DoorDef[]
     readonly items?: readonly ItemDef[]
+    readonly props?: readonly PropDef[]
   }[]
 }
 
@@ -97,6 +113,7 @@ export function loadGameMap(file: RoomsFile, gates: GatesFile = { gates: {} }): 
       entry: room.entry,
       doors: room.doors ?? [],
       items: room.items ?? [],
+      props: room.props ?? [],
     }
   }
 
@@ -122,6 +139,7 @@ export function singleRoomMap(
     goal?: GoalDef
     doors?: readonly DoorDef[]
     items?: readonly ItemDef[]
+    props?: readonly PropDef[]
   } = {},
 ): GameMap {
   const id = options.id ?? 'room'
@@ -133,7 +151,16 @@ export function singleRoomMap(
   return {
     startRoom: id,
     goal: options.goal ?? { room: id, col: entry.col, row: entry.row },
-    rooms: { [id]: { id, grid, entry, doors: options.doors ?? [], items: options.items ?? [] } },
+    rooms: {
+      [id]: {
+        id,
+        grid,
+        entry,
+        doors: options.doors ?? [],
+        items: options.items ?? [],
+        props: options.props ?? [],
+      },
+    },
     gates: {},
     order: [id],
   }

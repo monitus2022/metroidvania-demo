@@ -26,6 +26,7 @@ interface MutRoom {
     gate?: string
   }[]
   items?: { id: string; ability: string; col: number; row: number }[]
+  props?: { id: string; kind: string; col: number; row: number }[]
 }
 interface MutRooms {
   startRoom: string
@@ -265,6 +266,46 @@ describe('solver: content validation', () => {
     expect(run(rooms).errors).toContain(
       'item "gallery-double-jump" grants unknown ability "wallSlide"',
     )
+  })
+
+  it('rejects a prop of a kind the renderer cannot draw', () => {
+    const rooms = mutRooms()
+    roomIn(rooms, 'atrium').props![0]!.kind = 'statue'
+    expect(run(rooms).errors).toContain(
+      'prop "atrium-chest" has unknown kind "statue" (known: flag, chest)',
+    )
+  })
+
+  it('rejects a prop buried inside solid terrain', () => {
+    const rooms = mutRooms()
+    roomIn(rooms, 'atrium').props![0]!.row = 11
+    expect(run(rooms).errors).toContain('prop "atrium-chest" is inside solid terrain in "atrium"')
+  })
+
+  it('rejects a prop placed outside the room', () => {
+    const rooms = mutRooms()
+    roomIn(rooms, 'atrium').props![0]!.col = 99
+    expect(run(rooms).errors).toContain('prop "atrium-chest" is outside room "atrium"')
+  })
+
+  it('keeps the shipped props on standable ground and the goal flag on the goal cell', () => {
+    // The flag is a navigation aid: if it drifts off the goal cell it starts
+    // pointing at the wrong place, which no screenshot test would notice.
+    const map = loadGameMap(roomsFile as RoomsFile, gatesFile as GatesFile)
+    const goal = map.goal
+    const flag = map.rooms[goal.room]!.props.find((p) => p.kind === 'flag')
+    expect(flag).toBeDefined()
+    expect({ col: flag!.col, row: flag!.row }).toEqual({ col: goal.col, row: goal.row })
+
+    for (const roomId of map.order) {
+      const room = map.rooms[roomId]!
+      for (const prop of room.props) {
+        expect(isSolid(room.grid, prop.col, prop.row), `${prop.id} sits in rock`).toBe(false)
+        expect(isSolid(room.grid, prop.col, prop.row + 1), `${prop.id} floats with nothing under it`).toBe(
+          true,
+        )
+      }
+    }
   })
 
   it('reports validation errors instead of guessing at reachability', () => {

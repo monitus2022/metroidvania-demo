@@ -1,5 +1,5 @@
 import { isSolid, type TileGrid } from '../../src/sim/tiles'
-import type { GameMap } from '../../src/sim/content'
+import { KNOWN_PROP_KINDS, type GameMap } from '../../src/sim/content'
 
 /**
  * Reachability solver — Node only. No browser, no renderer, no engine.
@@ -222,6 +222,21 @@ function validate(map: GameMap, gates: Readonly<Record<string, string>>): string
         errors.push(`item "${item.id}" is outside room "${roomId}"`)
       } else if (!isEmpty(g, item.col, item.row)) {
         errors.push(`item "${item.id}" is inside solid terrain in "${roomId}"`)
+      }
+    }
+
+    // Props are scenery, but a prop buried in rock or drawn off the map is a
+    // content mistake worth failing on rather than silently not drawing it.
+    for (const prop of room.props) {
+      if (!KNOWN_PROP_KINDS.includes(prop.kind as (typeof KNOWN_PROP_KINDS)[number])) {
+        errors.push(
+          `prop "${prop.id}" has unknown kind "${prop.kind}" (known: ${KNOWN_PROP_KINDS.join(', ')})`,
+        )
+      }
+      if (prop.col < 0 || prop.col >= g.w || prop.row < 0 || prop.row >= g.h) {
+        errors.push(`prop "${prop.id}" is outside room "${roomId}"`)
+      } else if (!isEmpty(g, prop.col, prop.row)) {
+        errors.push(`prop "${prop.id}" is inside solid terrain in "${roomId}"`)
       }
     }
   }
